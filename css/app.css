@@ -204,6 +204,7 @@ input.date { width: auto; }
 /* investment */
 .input.mini { padding: 5px 8px; font-size: 0.82rem; border-radius: 8px; max-width: 150px; }
 .input.num-in { width: 84px; text-align: right; }
+.fx-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; }
 .auto-box { padding: 14px; border: 1px solid var(--border, #2a2f3a); border-radius: 12px; background: rgba(96,165,250,0.05); }
 .price-row { display: grid; grid-template-columns: 1fr 140px; gap: 12px; align-items: center; }
 
