@@ -1,7 +1,7 @@
 // Mise à jour automatique des prix (dernier cours de clôture) via Alpha Vantage.
 // Clé gratuite : https://www.alphavantage.co/support/#api-key  (~25 requêtes / jour)
 import { store, mutate } from "./store.js";
-import { portfolio, snapshotToday } from "./invest.js";
+import { portfolio, snapshotToday, assetCur, hasCadAssets } from "./invest.js";
 import { todayStr } from "./util.js";
 import { toast } from "./ui/components.js";
 
@@ -40,6 +40,30 @@ export async function fetchClose(ticker, key) {
   return { price: Number(series[date]["4. close"]), date };
 }
 
+// Taux USD -> CAD (Banque centrale européenne via Frankfurter, sans clé API).
+let fxRunning = false;
+export async function refreshFx({ manual = false } = {}) {
+  if (fxRunning) return;
+  fxRunning = true;
+  try {
+    let j;
+    for (const url of ["https://api.frankfurter.dev/v1/latest?base=USD&symbols=CAD", "https://api.frankfurter.app/latest?from=USD&to=CAD"]) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) { j = await r.json(); break; }
+      } catch {}
+    }
+    const rate = Number(j?.rates?.CAD);
+    if (!(rate > 0)) throw new Error("Exchange rate unavailable");
+    mutate((x) => { x.settings.fx_usdcad = rate; x.settings.fx_date = todayStr(); });
+    if (manual) toast(`1 USD = ${rate.toFixed(4)} CAD`);
+  } catch (e) {
+    if (manual) toast(e.message + " — enter the rate by hand", "err");
+  } finally {
+    fxRunning = false;
+  }
+}
+
 /**
  * Met à jour les prix des positions ouvertes.
  * force=false : une seule fois par jour et par symbole (mode automatique, silencieux).
@@ -62,7 +86,9 @@ export async function refreshPrices({ force = false, quiet = false } = {}) {
     for (let i = 0; i < syms.length; i++) {
       const sym = syms[i];
       try {
-        got[sym] = await fetchClose(d.inv_assets[sym]?.ticker || sym, key);
+        // Titre canadien sans ticker personnalisé : suffixe Toronto (.TRT) ajouté automatiquement
+        const ticker = d.inv_assets[sym]?.ticker || (assetCur(d, sym) === "CAD" && !sym.includes(".") ? sym + ".TRT" : sym);
+        got[sym] = await fetchClose(ticker, key);
       } catch (e) {
         errors.push(`${sym}: ${e.message}`);
         failed.add(today + sym); // pas de nouvel essai automatique aujourd'hui (économise le quota)
@@ -94,6 +120,7 @@ export async function refreshPrices({ force = false, quiet = false } = {}) {
 export function startAutoRefresh() {
   const tick = () => {
     if (!store.ready || document.visibilityState !== "visible" || !navigator.onLine) return;
+    if ((store.data.settings.inv_currency === "CAD" || hasCadAssets(store.data)) && store.data.settings.fx_date !== todayStr()) refreshFx();
     if (!store.data.settings.av_key || store.data.settings.av_auto === false) return;
     refreshPrices({ quiet: true });
   };
