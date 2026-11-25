@@ -1,8 +1,8 @@
 import { html, useState } from "../lib/preact-htm.js";
 import { useStore, mutate } from "../store.js";
-import { TYPES, portfolio, byClass, snapshotToday, costSeries, normSymbol, txTotal } from "../invest.js";
+import { TYPES, portfolio, byClass, snapshotToday, costSeries, normSymbol, txTotal, fxOf, moneyFx, nat, assetCur, hasCadAssets } from "../invest.js";
 import { money, num, round2, todayStr } from "../util.js";
-import { refreshPrices } from "../quotes.js";
+import { refreshPrices, refreshFx } from "../quotes.js";
 import { Icon, Card, Modal, Field, Segmented, Select, TextArea, Empty, ChartCanvas, toast, confirmDialog } from "./components.js";
 
 const PALETTE = ["#60a5fa", "#a78bfa", "#34d399", "#fbbf24", "#f472b6", "#22d3ee", "#fb923c", "#94a3b8", "#4ade80", "#f87171"];
@@ -10,6 +10,7 @@ const tone = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
 const fmtQty = (q) => Number(num(q).toFixed(4)).toLocaleString("en-US");
 const pct = (v, sign = false) => `${v > 0 && sign ? "+" : ""}${v.toFixed(1)}%`;
 const GRID = "rgba(255,255,255,0.06)";
+const GREEN = "#22c55e", RED = "#ef4444";
 const tip = { backgroundColor: "#0b0d12", borderColor: "#2a2f3a", borderWidth: 1, padding: 10, titleColor: "#e6e9f0", bodyColor: "#c5cad6" };
 
 function Kpi({ label, value, tone: t = "", sub }) {
@@ -27,6 +28,11 @@ export function InvestmentView() {
   const acc = account === "All" ? null : account;
   const pf = portfolio(d, acc);
   const hasData = d.inv_transactions.length > 0;
+  const fx = fxOf(d);
+  const setCur = (c) => {
+    mutate((x) => (x.settings.inv_currency = c));
+    if (c === "CAD" && d.settings.fx_date !== todayStr()) refreshFx({ manual: true });
+  };
 
   return html`<div class="page">
     <div class="page-head">
@@ -35,9 +41,17 @@ export function InvestmentView() {
         <div class="segmented">
           ${[["overview", "Portfolio"], ["transactions", "Transactions"], ["allocation", "Allocation"], ["strategy", "Strategy"]].map(([id, label]) => html`<button class=${tab === id ? "active" : ""} onClick=${() => setTab(id)}>${label}</button>`)}
         </div>
+        ${tab !== "strategy" && html`<${Segmented} value=${fx.cur} options=${["USD", "CAD"]} onChange=${setCur} />`}
         ${tab !== "strategy" && html`<button class="btn primary" onClick=${() => setForm({ index: null })}><${Icon} name="plus" size=${16} />Transaction</button>`}
       </div>
     </div>
+
+    ${tab !== "strategy" && fx.cur === "CAD" && html`<div class="fx-row">
+      <span class="muted small-t">Displayed in CAD · your data stays in USD · 1 USD =</span>
+      <input class="input mini num-in" type="number" step="0.0001" min="0" value=${d.settings.fx_usdcad || ""} placeholder="rate" onChange=${(e) => mutate((x) => { x.settings.fx_usdcad = num(e.target.value); x.settings.fx_date = todayStr(); })} />
+      <span class="muted small-t">CAD${d.settings.fx_date ? " · " + d.settings.fx_date : ""}</span>
+      <button class="btn small ghost" onClick=${() => refreshFx({ manual: true })}><${Icon} name="refresh" size=${14} />Refresh rate</button>
+    </div>`}
 
     ${tab !== "strategy" && tab !== "allocation" && html`<div class="chips scroll">
       ${["All", ...d.inv_accounts].map((a) => html`<button class="chip ${account === a ? "active" : ""}" onClick=${() => setAccount(a)}>${a}</button>`)}
@@ -48,12 +62,17 @@ export function InvestmentView() {
     ${tab === "allocation" && html`<${Allocation} />`}
     ${tab === "strategy" && html`<${Card} title="Strategy & vision"><${TextArea} value=${d.inv_journal} minRows=${18} placeholder="Market vision, yearly plan, rules…" onInput=${(v) => mutate((x) => (x.inv_journal = v))} /><//>`}
 
-    ${form && html`<${TxForm} initial=${form.row} onClose=${() => setForm(null)} onSave=${(row, cls) => {
+    ${form && html`<${TxForm} initial=${form.row} onClose=${() => setForm(null)} onSave=${(row, cls, cur) => {
       mutate((x) => {
         if (form.index == null) x.inv_transactions.push(row);
         else x.inv_transactions[form.index] = row;
-        if (cls !== undefined && row.Symbol) (x.inv_assets[row.Symbol] ??= {}).class = cls;
+        if (row.Symbol) {
+          const a = (x.inv_assets[row.Symbol] ??= {});
+          if (cls !== undefined) a.class = cls;
+          if (cur) a.currency = cur;
+        }
       });
+      if (cur === "CAD" && !d.settings.fx_usdcad) refreshFx();
       toast(form.index == null ? "Transaction added" : "Transaction updated");
       setForm(null);
     }} />`}
@@ -66,8 +85,10 @@ function Overview({ pf, acc, onPrices, onLists }) {
   const s = useStore();
   const d = s.data;
   const [by, setBy] = useState("class");
+  const m = moneyFx(d);
+  const { rate, symbol } = fxOf(d);
 
-  const groups = by === "class" ? [...byClass(pf.open).entries()] : pf.open.map((p) => [p.symbol, p.value]);
+  const groups = by === "class" ? [...byClass(pf.open).entries()] : pf.open.map((p) => [p.symbol, p.valueU]);
   groups.sort((a, b) => b[1] - a[1]);
 
   // courbe de valeur : snapshots (valeur) + capital investi (calculé depuis les transactions)
@@ -76,22 +97,29 @@ function Overview({ pf, acc, onPrices, onLists }) {
   const labels = [...new Set([...cost.map((c) => c.date), ...snaps.map((x) => x.date)])].sort();
   let lastCost = 0;
   const costMap = Object.fromEntries(cost.map((c) => [c.date, c.cost]));
-  const costLine = labels.map((l) => ((lastCost = costMap[l] ?? lastCost), lastCost));
+  const costLine = labels.map((l) => round2(((lastCost = costMap[l] ?? lastCost), lastCost) * rate));
   const snapMap = Object.fromEntries(snaps.map((x) => [x.date, x.value]));
-  const valueLine = labels.map((l) => snapMap[l] ?? null);
+  const valueLine = labels.map((l) => (snapMap[l] != null ? round2(snapMap[l] * rate) : null));
+
+  // couleur selon le gain : vert si la valeur dépasse le capital investi, rouge sinon
+  const statusAt = (i) => (valueLine[i] == null ? GREEN : valueLine[i] >= costLine[i] ? GREEN : RED);
+  const lastIdx = valueLine.reduce((a, v, i) => (v != null ? i : a), -1);
+  const overall = lastIdx >= 0 ? statusAt(lastIdx) : GREEN;
 
   const setClass = (sym, cls) => mutate((x) => ((x.inv_assets[sym] ??= {}).class = cls));
 
   return html`<div class="stack">
     ${pf.missingPrices > 0 && html`<div class="banner warn"><${Icon} name="alert" size=${16} /><span>${pf.missingPrices} position(s) without a price are valued at cost. Update prices to see real gains.</span><button class="btn small" onClick=${onPrices}>Update prices</button></div>`}
 
+    ${pf.fxMissing && html`<div class="banner warn"><${Icon} name="alert" size=${16} /><span>Some holdings are in CAD but no exchange rate is available yet; they are counted at 1:1 until it loads.</span><button class="btn small" onClick=${() => refreshFx({ manual: true })}>Get rate</button></div>`}
+
     <div class="kpi-grid">
-      <${Kpi} label="Portfolio value" value=${money(pf.value, 0)} />
-      <${Kpi} label="Invested (cost)" value=${money(pf.cost, 0)} />
-      <${Kpi} label="Unrealized P&L" value=${money(pf.unrealized, 0, true)} tone=${tone(pf.unrealized)} sub=${pct(pf.unrealizedPct, true)} />
-      <${Kpi} label="Realized P&L" value=${money(pf.realized, 0, true)} tone=${tone(pf.realized)} />
-      <${Kpi} label="Dividends" value=${money(pf.dividends, 0)} tone=${pf.dividends > 0 ? "pos" : ""} />
-      <${Kpi} label="Total return" value=${money(pf.totalReturn, 0, true)} tone=${tone(pf.totalReturn)} sub="unrealized + realized + dividends" />
+      <${Kpi} label="Portfolio value" value=${m(pf.value, 0)} />
+      <${Kpi} label="Invested (cost)" value=${m(pf.cost, 0)} />
+      <${Kpi} label="Unrealized P&L" value=${m(pf.unrealized, 0, true)} tone=${tone(pf.unrealized)} sub=${pct(pf.unrealizedPct, true)} />
+      <${Kpi} label="Realized P&L" value=${m(pf.realized, 0, true)} tone=${tone(pf.realized)} />
+      <${Kpi} label="Dividends" value=${m(pf.dividends, 0)} tone=${pf.dividends > 0 ? "pos" : ""} />
+      <${Kpi} label="Total return" value=${m(pf.totalReturn, 0, true)} tone=${tone(pf.totalReturn)} sub="unrealized + realized + dividends" />
     </div>
 
     <div class="dash-grid">
@@ -101,13 +129,13 @@ function Overview({ pf, acc, onPrices, onLists }) {
             <thead><tr><th>Symbol</th><th>Class</th><th class="num">Qty</th><th class="num">Avg cost</th><th class="num">Price</th><th class="num">Value</th><th class="num">P&L</th><th class="num">Weight</th></tr></thead>
             <tbody>${pf.open.map(
               (p) => html`<tr>
-                <td data-label="Symbol" class="strong">${p.symbol}</td>
+                <td data-label="Symbol" class="strong">${p.symbol}${p.currency === "CAD" ? html` <span class="pill">CAD</span>` : ""}</td>
                 <td data-label="Class"><select class="input mini" value=${p.class} onChange=${(e) => setClass(p.symbol, e.target.value)}><option value="" selected=${!p.class}>—</option>${d.inv_classes.map((c) => html`<option value=${c} selected=${p.class === c}>${c}</option>`)}</select></td>
                 <td data-label="Qty" class="num">${fmtQty(p.qty)}</td>
-                <td data-label="Avg cost" class="num">${money(p.avg, 2)}</td>
-                <td data-label="Price" class="num ${p.hasPrice ? "" : "muted"}">${p.hasPrice ? money(p.price, 2) : "no price"}</td>
-                <td data-label="Value" class="num strong">${money(p.value, 0)}</td>
-                <td data-label="P&L" class="num ${tone(p.pnl)}">${money(p.pnl, 0, true)} <span class="small-t">${pct(p.pnlPct, true)}</span></td>
+                <td data-label="Avg cost" class="num">${nat(p.avg, 2, p.currency)}</td>
+                <td data-label="Price" class="num ${p.hasPrice ? "" : "muted"}">${p.hasPrice ? nat(p.price, 2, p.currency) : "no price"}</td>
+                <td data-label="Value" class="num strong">${m(p.valueU, 0)}</td>
+                <td data-label="P&L" class="num ${tone(p.pnl)}">${m(p.pnlU, 0, true)} <span class="small-t">${pct(p.pnlPct, true)}</span></td>
                 <td data-label="Weight" class="num">${pct(p.weight)}</td>
               </tr>`
             )}</tbody></table></div>`
@@ -117,8 +145,8 @@ function Overview({ pf, acc, onPrices, onLists }) {
       <${Card} title="Breakdown" actions=${html`<div class="segmented"><button class=${by === "class" ? "active" : ""} onClick=${() => setBy("class")}>Class</button><button class=${by === "symbol" ? "active" : ""} onClick=${() => setBy("symbol")}>Symbol</button></div>`}>
         ${groups.length
           ? html`<${ChartCanvas} type="doughnut" height=${280}
-              data=${{ labels: groups.map((g) => g[0]), datasets: [{ data: groups.map((g) => round2(g[1])), backgroundColor: groups.map((_, i) => PALETTE[i % PALETTE.length]), borderColor: "#141821", borderWidth: 3 }] }}
-              options=${{ cutout: "66%", plugins: { legend: { position: "bottom", labels: { boxWidth: 10, usePointStyle: true, color: "#c5cad6" } }, tooltip: { ...tip, callbacks: { label: (c) => `${c.label}: ${money(c.parsed, 0)} (${pf.value ? ((c.parsed / pf.value) * 100).toFixed(1) : 0}%)` } } } }} />`
+              data=${{ labels: groups.map((g) => g[0]), datasets: [{ data: groups.map((g) => round2(g[1] * rate)), backgroundColor: groups.map((_, i) => PALETTE[i % PALETTE.length]), borderColor: "#141821", borderWidth: 3 }] }}
+              options=${{ cutout: "66%", plugins: { legend: { position: "bottom", labels: { boxWidth: 10, usePointStyle: true, color: "#c5cad6" } }, tooltip: { ...tip, callbacks: { label: (c) => `${c.label}: ${m(c.parsed / rate, 0)} (${pf.value ? ((c.parsed / rate / pf.value) * 100).toFixed(1) : 0}%)` } } } }} />`
           : html`<div class="muted">Nothing to show.</div>`}
       <//>
 
@@ -126,11 +154,11 @@ function Overview({ pf, acc, onPrices, onLists }) {
         ${labels.length > 1
           ? html`<${ChartCanvas} type="line" height=${260}
               data=${{ labels, datasets: [
-                { label: "Value", data: valueLine, borderColor: "#60a5fa", backgroundColor: "rgba(96,165,250,0.12)", fill: true, spanGaps: true, tension: 0.25, pointRadius: 3, borderWidth: 2 },
-                { label: "Invested", data: costLine, borderColor: "#94a3b8", borderDash: [6, 4], stepped: true, pointRadius: 0, borderWidth: 1.5 },
+                { label: "Value", data: valueLine, borderColor: overall, borderWidth: 2.5, spanGaps: true, tension: 0.25, pointRadius: 4, pointHoverRadius: 6, pointBackgroundColor: valueLine.map((_, i) => statusAt(i)), pointBorderColor: "#141821", pointBorderWidth: 1.5, segment: { borderColor: (c) => statusAt(c.p1DataIndex) }, fill: true, backgroundColor: (c) => { const a = c.chart.chartArea; if (!a) return "transparent"; const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, overall === GREEN ? "rgba(34,197,94,0.38)" : "rgba(239,68,68,0.38)"); g.addColorStop(1, "rgba(0,0,0,0)"); return g; } },
+                { label: "Invested", data: costLine, borderColor: "#fbbf24", borderDash: [6, 4], stepped: true, pointRadius: 0, borderWidth: 1.8 },
               ] }}
-              options=${{ interaction: { mode: "index", intersect: false }, plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8, color: "#c5cad6" } }, tooltip: { ...tip, callbacks: { label: (c) => `${c.dataset.label}: ${money(c.parsed.y, 0)}` } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { grid: { color: GRID }, border: { display: false }, ticks: { callback: (v) => "$" + v.toLocaleString() } } } }} />
-            ${!snaps.length && !acc && html`<div class="muted small-t" style="margin-top:8px">The blue line builds up each time you update prices (one point per day).</div>`}`
+              options=${{ interaction: { mode: "index", intersect: false }, plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8, color: "#c5cad6" } }, tooltip: { ...tip, callbacks: { label: (c) => `${c.dataset.label}: ${m(c.parsed.y / rate, 0)}`, footer: (items) => { const i = items[0].dataIndex; return valueLine[i] == null ? "" : `Gain vs invested: ${m((valueLine[i] - costLine[i]) / rate, 0, true)}`; } } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { grid: { color: GRID }, border: { display: false }, ticks: { callback: (v) => symbol + v.toLocaleString() } } } }} />
+            ${!snaps.length && !acc && html`<div class="muted small-t" style="margin-top:8px">The colored line builds up each time you update prices (one point per day).</div>`}`
           : html`<div class="muted">Add transactions on several dates and update prices regularly to see the evolution.</div>`}
       <//>
     </div>
@@ -140,6 +168,7 @@ function Overview({ pf, acc, onPrices, onLists }) {
 function Transactions({ account, onEdit }) {
   const s = useStore();
   const d = s.data;
+  const m = moneyFx(d);
   const [type, setType] = useState("All");
   const [sym, setSym] = useState("All");
   const symbols = ["All", ...[...new Set(d.inv_transactions.map((t) => normSymbol(t.Symbol)).filter(Boolean))].sort()];
@@ -167,9 +196,9 @@ function Transactions({ account, onEdit }) {
             <td data-label="Symbol" class="strong">${normSymbol(t.Symbol)}</td>
             <td data-label="Account" class="muted">${t.Account || "—"}</td>
             <td data-label="Qty" class="num">${t.Type === "Dividend" ? "—" : fmtQty(t.Quantity)}</td>
-            <td data-label="Price" class="num">${t.Type === "Dividend" ? "—" : money(t.Price, 2)}</td>
-            <td data-label="Fees" class="num muted">${num(t.Fees) ? money(t.Fees, 2) : "—"}</td>
-            <td data-label="Total" class="num strong ${t.Type === "Buy" ? "" : t.Type === "Sell" ? "" : "pos"}">${money(txTotal(t), 2)}</td>
+            <td data-label="Price" class="num">${t.Type === "Dividend" ? "—" : m(t.Price, 2, false, assetCur(d, normSymbol(t.Symbol)))}</td>
+            <td data-label="Fees" class="num muted">${num(t.Fees) ? m(t.Fees, 2, false, assetCur(d, normSymbol(t.Symbol))) : "—"}</td>
+            <td data-label="Total" class="num strong ${t.Type === "Buy" ? "" : t.Type === "Sell" ? "" : "pos"}">${m(txTotal(t), 2, false, assetCur(d, normSymbol(t.Symbol)))}</td>
             <td data-label="Note" class="note-cell ${t.Note ? "" : "hide-m"}">${t.Note || ""}</td>
             <td class="actions"><button class="icon-btn" aria-label="Edit" onClick=${() => onEdit(i)}><${Icon} name="edit" size=${16} /></button><button class="icon-btn" aria-label="Delete" onClick=${() => del(i)}><${Icon} name="trash" size=${16} /></button></td>
           </tr>`)}</tbody></table></div>`
@@ -181,6 +210,7 @@ function Transactions({ account, onEdit }) {
 function Allocation() {
   const s = useStore();
   const d = s.data;
+  const m = moneyFx(d);
   const pf = portfolio(d, null);
   const actual = byClass(pf.open);
   const classes = [...new Set([...d.inv_classes, ...actual.keys(), ...Object.keys(d.inv_targets)])].filter((c) => c !== "Unassigned" || actual.has(c));
@@ -203,11 +233,11 @@ function Allocation() {
           <thead><tr><th>Class</th><th class="num">Value</th><th class="num">Actual</th><th class="num">Target %</th><th class="num">Gap</th><th class="num">To rebalance</th></tr></thead>
           <tbody>${shown.length ? shown.map((r) => html`<tr>
             <td data-label="Class" class="strong">${r.c}</td>
-            <td data-label="Value" class="num">${money(r.val, 0)}</td>
+            <td data-label="Value" class="num">${m(r.val, 0)}</td>
             <td data-label="Actual" class="num">${pct(r.act)}</td>
             <td data-label="Target %" class="num">${r.c === "Unassigned" ? "—" : html`<input class="input mini num-in" type="number" min="0" max="100" step="1" value=${r.tgt || ""} placeholder="0" onChange=${(e) => mutate((x) => (x.inv_targets[r.c] = num(e.target.value)))} />`}</td>
             <td data-label="Gap" class="num ${Math.abs(r.diff) < 1 ? "" : r.diff > 0 ? "neg" : "pos"}">${r.c === "Unassigned" ? "—" : pct(r.diff, true)}</td>
-            <td data-label="To rebalance" class="num ${r.move > 0 ? "pos" : r.move < 0 ? "neg" : ""}">${r.c === "Unassigned" || !r.tgt ? "—" : `${r.move >= 0 ? "Buy" : "Sell"} ${money(Math.abs(r.move), 0)}`}</td>
+            <td data-label="To rebalance" class="num ${r.move > 0 ? "pos" : r.move < 0 ? "neg" : ""}">${r.c === "Unassigned" || !r.tgt ? "—" : `${r.move >= 0 ? "Buy" : "Sell"} ${m(Math.abs(r.move), 0)}`}</td>
           </tr>`) : html`<tr><td colspan="6" class="muted pad">No data yet.</td></tr>`}</tbody></table></div>
         <div class="muted small-t pad">Rebalancing amounts are indicative: they show what to buy or sell in each class to reach your target with the current portfolio value.</div>
       <//>
@@ -235,6 +265,16 @@ function TxForm({ initial, onClose, onSave }) {
       : { Date: todayStr(), Type: "Buy", Symbol: "", Quantity: "", Price: "", Fees: "", Amount: "", Account: d.inv_accounts[0] || "", Note: "" }
   );
   const [cls, setCls] = useState(() => d.inv_assets[normSymbol(initial?.Symbol)]?.class ?? "");
+  const [cur, setCur] = useState(() => assetCur(d, normSymbol(initial?.Symbol)));
+  const pickSymbol = (v) => {
+    const sy = normSymbol(v);
+    set({ Symbol: v.toUpperCase() });
+    const a = d.inv_assets[sy]; // symbole déjà connu : on reprend sa classe et sa devise
+    if (a) {
+      setCls(a.class ?? "");
+      setCur(a.currency === "CAD" ? "CAD" : "USD");
+    }
+  };
   const set = (patch) => setF((p) => ({ ...p, ...patch }));
   const sym = normSymbol(f.Symbol);
   const known = sym && d.inv_assets[sym]?.class;
@@ -249,25 +289,26 @@ function TxForm({ initial, onClose, onSave }) {
       <div class="form-grid" style="margin-bottom:0">
         <${Field} label="Date"><input type="date" class="input" value=${f.Date} onInput=${(e) => set({ Date: e.target.value })} /><//>
         <${Field} label="Symbol">
-          <input class="input" list="dl-inv-sym" placeholder="e.g. VFV, AAPL" value=${f.Symbol} onInput=${(e) => set({ Symbol: e.target.value.toUpperCase() })} />
+          <input class="input" list="dl-inv-sym" placeholder="e.g. VFV, AAPL" value=${f.Symbol} onInput=${(e) => pickSymbol(e.target.value)} />
           <datalist id="dl-inv-sym">${symbols.map((x) => html`<option value=${x}></option>`)}</datalist>
         <//>
         <${Field} label="Account"><select class="input" value=${f.Account} onChange=${(e) => set({ Account: e.target.value })}><option value="" selected=${!f.Account}>—</option>${d.inv_accounts.map((a) => html`<option value=${a} selected=${f.Account === a}>${a}</option>`)}</select><//>
         <${Field} label="Asset class" hint=${known && cls === known ? "Already set for this symbol" : "Applies to this symbol"}><select class="input" value=${cls} onChange=${(e) => setCls(e.target.value)}><option value="" selected=${!cls}>—</option>${d.inv_classes.map((c) => html`<option value=${c} selected=${cls === c}>${c}</option>`)}</select><//>
+        <${Field} label="Currency" hint="Currency this stock trades in"><select class="input" value=${cur} onChange=${(e) => setCur(e.target.value)}>${["USD", "CAD"].map((c) => html`<option value=${c} selected=${cur === c}>${c}</option>`)}</select><//>
         ${isDiv
-          ? html`<${Field} label="Dividend amount ($)"><input class="input" inputmode="decimal" value=${f.Amount} onInput=${(e) => set({ Amount: e.target.value })} /><//>`
+          ? html`<${Field} label=${"Dividend amount (" + cur + ")"}><input class="input" inputmode="decimal" value=${f.Amount} onInput=${(e) => set({ Amount: e.target.value })} /><//>`
           : html`<${Field} label="Quantity"><input class="input" inputmode="decimal" value=${f.Quantity} onInput=${(e) => set({ Quantity: e.target.value })} /><//>
-            <${Field} label="Price per unit ($)"><input class="input" inputmode="decimal" value=${f.Price} onInput=${(e) => set({ Price: e.target.value })} /><//>
-            <${Field} label="Fees ($)"><input class="input" inputmode="decimal" placeholder="0" value=${f.Fees} onInput=${(e) => set({ Fees: e.target.value })} /><//>`}
+            <${Field} label=${"Price per unit (" + cur + ")"}><input class="input" inputmode="decimal" value=${f.Price} onInput=${(e) => set({ Price: e.target.value })} /><//>
+            <${Field} label=${"Fees (" + cur + ")"}><input class="input" inputmode="decimal" placeholder="0" value=${f.Fees} onInput=${(e) => set({ Fees: e.target.value })} /><//>`}
       </div>
       <${Field} label="Note"><input class="input" value=${f.Note} onInput=${(e) => set({ Note: e.target.value })} /><//>
-      <div class="row between"><span class="muted">Total <strong class="${f.Type === "Sell" || isDiv ? "pos" : ""}">${money(total, 2)}</strong></span>
+      <div class="row between"><span class="muted">Total <strong class="${f.Type === "Sell" || isDiv ? "pos" : ""}">${nat(total, 2, cur)}</strong></span>
         <div class="row gap"><button class="btn" onClick=${onClose}>Cancel</button>
         <button class="btn primary" disabled=${!valid} onClick=${() => onSave({
           Date: f.Date, Type: f.Type, Symbol: sym, Account: f.Account, Note: f.Note,
           Quantity: isDiv ? null : num(f.Quantity), Price: isDiv ? null : num(f.Price), Fees: isDiv ? 0 : num(f.Fees),
           Amount: round2(isDiv ? num(f.Amount) : txTotal({ ...f, Quantity: num(f.Quantity), Price: num(f.Price), Fees: num(f.Fees) })),
-        }, cls)}>${editing ? "Save" : "Add"}</button></div></div>
+        }, cls, cur)}>${editing ? "Save" : "Add"}</button></div></div>
     </div>
   <//>`;
 }
@@ -300,9 +341,9 @@ function PricesModal({ onClose }) {
     </div>
     <p class="muted" style="margin:16px 0 8px">Or enter prices by hand. Saving also records today's portfolio value for the history chart.</p>
     <div class="stack">
-      ${pf.open.map((p) => html`<div class="price-row"><div><div class="strong">${p.symbol}</div><div class="muted small-t">${fmtQty(p.qty)} units · cost ${money(p.avg, 2)}${p.priceDate ? " · close " + p.priceDate : ""}</div>
+      ${pf.open.map((p) => html`<div class="price-row"><div><div class="strong">${p.symbol}</div><div class="muted small-t">${fmtQty(p.qty)} units · cost ${nat(p.avg, 2, p.currency)}${p.priceDate ? " · close " + p.priceDate : ""}</div>
         <input class="input mini" style="margin-top:6px;width:120px" placeholder=${"Ticker: " + p.symbol} title="Ticker used by the price provider (e.g. VFV.TRT for Toronto)" value=${d.inv_assets[p.symbol]?.ticker || ""} onChange=${(e) => mutate((x) => ((x.inv_assets[p.symbol] ??= {}).ticker = e.target.value.trim().toUpperCase()))} /></div>
-        <input class="input" inputmode="decimal" placeholder="Price" value=${vals[p.symbol]} onInput=${(e) => setVals({ ...vals, [p.symbol]: e.target.value })} /></div>`)}
+        <input class="input" inputmode="decimal" placeholder=${"Price (" + p.currency + ")"} value=${vals[p.symbol]} onInput=${(e) => setVals({ ...vals, [p.symbol]: e.target.value })} /></div>`)}
     </div>
     <div class="row end gap" style="margin-top:18px"><button class="btn" onClick=${onClose}>Cancel</button>
       <button class="btn primary" onClick=${() => {
