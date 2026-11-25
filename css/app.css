@@ -201,6 +201,12 @@ input.date { width: auto; }
 .bar-cell span.g { background: var(--green); } .bar-cell span.r { background: var(--red); }
 .bar-cell b { position: relative; z-index: 1; font-weight: 600; padding: 0 4px; }
 
+/* investment */
+.input.mini { padding: 5px 8px; font-size: 0.82rem; border-radius: 8px; max-width: 150px; }
+.input.num-in { width: 84px; text-align: right; }
+.auto-box { padding: 14px; border: 1px solid var(--border, #2a2f3a); border-radius: 12px; background: rgba(96,165,250,0.05); }
+.price-row { display: grid; grid-template-columns: 1fr 140px; gap: 12px; align-items: center; }
+
 /* notes */
 .notes-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: start; }
 .notes-list { display: flex; flex-direction: column; gap: 4px; }
