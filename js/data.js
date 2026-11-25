@@ -1,5 +1,6 @@
 // Modèle de données — 100 % compatible avec le JSON de l'app Streamlit d'origine.
 import { num, round2, parseDate, fmtDate } from "./util.js";
+import { DEFAULT_ACCOUNTS, DEFAULT_CLASSES } from "./invest.js";
 
 export const COLUMNS = ["Date", "Symbole", "Setup", "Direction", "Risque", "RR", "Résultat", "PnL", "R", "Note"];
 export const DEFAULT_TEMPLATE = "Date: {date}\n\nHTF Context: \nLevels: \n\nLong scenario if: \nShort scenario if: \n\nNote: \n";
@@ -18,7 +19,13 @@ export function emptyData() {
     rr_options: [2, 3, 4, 5],
     log_linked: {},
     inv_journal: "",
-    inv_positions: [],
+    inv_transactions: [],
+    inv_prices: {},
+    inv_assets: {},
+    inv_targets: {},
+    inv_snapshots: [],
+    inv_accounts: [...DEFAULT_ACCOUNTS],
+    inv_classes: [...DEFAULT_CLASSES],
     settings: { r_base: 1500 },
   };
 }
@@ -87,7 +94,19 @@ export function normalize(raw) {
   if (raw.rr_options?.length) d.rr_options = raw.rr_options.map(Number);
   d.log_linked = raw.log_linked || {};
   d.inv_journal = raw.inv_journal || "";
-  d.inv_positions = Array.isArray(raw.inv_positions) ? raw.inv_positions : [];
+  d.inv_transactions = Array.isArray(raw.inv_transactions) ? raw.inv_transactions : [];
+  // migration : l'ancienne liste de positions devient des achats
+  if (!d.inv_transactions.length && Array.isArray(raw.inv_positions)) {
+    d.inv_transactions = raw.inv_positions
+      .filter((p) => p && p.Symbol)
+      .map((p) => ({ Date: String(p.Date || "").slice(0, 10), Type: "Buy", Symbol: String(p.Symbol).toUpperCase(), Quantity: num(p.Quantity), Price: num(p.Price), Fees: 0, Amount: round2(num(p.Quantity) * num(p.Price)), Account: "", Note: p.Note || "" }));
+  }
+  d.inv_prices = raw.inv_prices && typeof raw.inv_prices === "object" ? raw.inv_prices : {};
+  d.inv_assets = raw.inv_assets && typeof raw.inv_assets === "object" ? raw.inv_assets : {};
+  d.inv_targets = raw.inv_targets && typeof raw.inv_targets === "object" ? raw.inv_targets : {};
+  d.inv_snapshots = Array.isArray(raw.inv_snapshots) ? raw.inv_snapshots : [];
+  if (raw.inv_accounts?.length) d.inv_accounts = raw.inv_accounts;
+  if (raw.inv_classes?.length) d.inv_classes = raw.inv_classes;
   return d;
 }
 
@@ -145,14 +164,20 @@ export function serialize(data) {
     rr_options: data.rr_options,
     log_linked: data.log_linked,
     inv_journal: data.inv_journal,
-    inv_positions: data.inv_positions,
+    inv_transactions: data.inv_transactions,
+    inv_prices: data.inv_prices,
+    inv_assets: data.inv_assets,
+    inv_targets: data.inv_targets,
+    inv_snapshots: data.inv_snapshots,
+    inv_accounts: data.inv_accounts,
+    inv_classes: data.inv_classes,
     settings: data.settings,
   });
 }
 
 export function isEmptyData(d) {
   const noTrades = Object.values(d.trade_logs).every((l) => !l.length);
-  return noTrades && !Object.keys(d.journals).length && Object.values(d.trading_notes).every((t) => !t);
+  return noTrades && !Object.keys(d.journals).length && Object.values(d.trading_notes).every((t) => !t) && !d.inv_transactions.length && !d.inv_journal;
 }
 
 // ---------- Journal ----------

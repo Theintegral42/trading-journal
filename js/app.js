@@ -6,7 +6,9 @@ import { SyncPill, SettingsView } from "./ui/settings.js";
 import { DashboardView } from "./ui/dashboard.js";
 import { JournalView } from "./ui/journal.js";
 import { TradeLogView } from "./ui/tradelog.js";
-import { NotesView, InvestmentView } from "./ui/notes.js";
+import { NotesView } from "./ui/notes.js";
+import { InvestmentView } from "./ui/investment.js";
+import { startAutoRefresh } from "./quotes.js";
 import { readFileText } from "./util.js";
 import { getClientId } from "./config.js";
 
@@ -132,7 +134,7 @@ if (window.Chart) {
 }
 
 render(html`<${App} />`, document.getElementById("root"));
-init();
+init().then(startAutoRefresh);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch((e) => console.warn("SW", e)));
