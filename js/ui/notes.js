@@ -1,7 +1,7 @@
 import { html, useState } from "../lib/preact-htm.js";
 import { useStore, mutate } from "../store.js";
-import { renderMarkdown, money, num, todayStr } from "../util.js";
-import { Icon, Card, Modal, Field, TextArea, Empty, toast, confirmDialog } from "./components.js";
+import { renderMarkdown } from "../util.js";
+import { Icon, Card, Modal, Field, TextArea, Empty, confirmDialog } from "./components.js";
 
 export function NotesView() {
   const s = useStore();
@@ -67,47 +67,5 @@ function FolderModal({ mode, current, onClose, onDone }) {
     <${Field} label="Name"><input class="input" autofocus value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && save()} /><//>
     ${taken && html`<div class="neg small-t" style="margin-top:6px">This name already exists.</div>`}
     <div class="row end gap" style="margin-top:18px"><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${!n || taken} onClick=${save}>Save</button></div>
-  <//>`;
-}
-
-export function InvestmentView() {
-  const s = useStore();
-  const d = s.data;
-  const [tab, setTab] = useState("journal");
-  const pos = d.inv_positions;
-  const invested = pos.reduce((a, p) => a + num(p.Quantity) * num(p.Price), 0);
-  const [form, setForm] = useState(null);
-
-  return html`<div class="page">
-    <div class="page-head">
-      <div><h1>Investment</h1><div class="muted">Market vision, yearly strategy, positions</div></div>
-      <div class="segmented"><button class=${tab === "journal" ? "active" : ""} onClick=${() => setTab("journal")}>Journal</button><button class=${tab === "positions" ? "active" : ""} onClick=${() => setTab("positions")}>Positions</button></div>
-    </div>
-    ${tab === "journal"
-      ? html`<${Card} title="Strategy & vision"><${TextArea} value=${d.inv_journal} minRows=${18} placeholder="Market vision, yearly plan…" onInput=${(v) => mutate((x) => (x.inv_journal = v))} /><//>`
-      : html`<${Card} title="Positions" actions=${html`<span class="muted">Invested ${money(invested, 0)}</span><button class="btn small primary" onClick=${() => setForm({ i: null, row: { Date: todayStr(), Symbol: "", Quantity: "", Price: "", Note: "" } })}><${Icon} name="plus" size=${14} />Add</button>`} pad=${false}>
-          ${pos.length
-            ? html`<div class="table-wrap"><table class="table responsive"><thead><tr><th>Date</th><th>Symbol</th><th class="num">Quantity</th><th class="num">Price</th><th class="num">Value</th><th>Note</th><th></th></tr></thead><tbody>
-              ${pos.map((p, i) => html`<tr><td data-label="Date">${p.Date}</td><td data-label="Symbol" class="strong">${p.Symbol}</td><td data-label="Quantity" class="num">${p.Quantity}</td><td data-label="Price" class="num">${p.Price}</td><td data-label="Value" class="num">${money(num(p.Quantity) * num(p.Price), 0)}</td><td data-label="Note" class="note-cell">${p.Note}</td>
-                <td class="actions"><button class="icon-btn" aria-label="Edit" onClick=${() => setForm({ i, row: { ...p } })}><${Icon} name="edit" size=${16} /></button><button class="icon-btn" aria-label="Delete" onClick=${() => mutate((x) => x.inv_positions.splice(i, 1))}><${Icon} name="trash" size=${16} /></button></td></tr>`)}
-            </tbody></table></div>`
-            : html`<${Empty} icon="briefcase" title="No positions">Add your first position.<//>`}
-        <//>`}
-    ${form && html`<${PositionForm} init=${form.row} onClose=${() => setForm(null)} onSave=${(row) => (mutate((x) => (form.i == null ? x.inv_positions.push(row) : (x.inv_positions[form.i] = row))), setForm(null))} />`}
-  </div>`;
-}
-
-function PositionForm({ init, onClose, onSave }) {
-  const [f, setF] = useState(init);
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  return html`<${Modal} title="Position" onClose=${onClose}>
-    <div class="form-grid">
-      <${Field} label="Date"><input type="date" class="input" value=${f.Date} onInput=${set("Date")} /><//>
-      <${Field} label="Symbol"><input class="input" value=${f.Symbol} onInput=${set("Symbol")} /><//>
-      <${Field} label="Quantity"><input class="input" inputmode="decimal" value=${f.Quantity} onInput=${set("Quantity")} /><//>
-      <${Field} label="Price"><input class="input" inputmode="decimal" value=${f.Price} onInput=${set("Price")} /><//>
-    </div>
-    <${Field} label="Note"><input class="input" value=${f.Note} onInput=${set("Note")} /><//>
-    <div class="row end gap" style="margin-top:18px"><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" onClick=${() => onSave(f)}>Save</button></div>
   <//>`;
 }
