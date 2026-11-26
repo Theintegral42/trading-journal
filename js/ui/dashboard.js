@@ -1,4 +1,4 @@
-import { html, useState } from "../lib/preact-htm.js";
+import { html, useState, useEffect } from "../lib/preact-htm.js";
 import { useStore, mutate, mainRows } from "../store.js";
 import { computeStats, groupStats, periodFilter, dayOf, normDirection } from "../data.js";
 import { money, fmtR, num, pad, parseDate, round2, compactMoney, displayFactor, displaySymbol, baseCurrency } from "../util.js";
@@ -175,6 +175,22 @@ function GroupTable({ data }) {
 }
 
 function CalendarGrid({ month, rows }) {
+  const [pop, setPop] = useState(null); // { day, left, top } : bulle de détail d'une journée
+  useEffect(() => {
+    if (!pop) return;
+    const close = (e) => { if (e.type === "scroll" || !e.target.closest?.(".cal-c")) setPop(null); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("scroll", close, true);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("scroll", close, true); };
+  }, [pop]);
+  const openPop = (e, key, n) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const w = 300, h = 74 + n * 46;
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
+    const above = r.top > h + 16 || r.top > window.innerHeight - r.bottom;
+    const top = above ? Math.max(8, r.top - h - 8) : Math.min(r.bottom + 8, window.innerHeight - h - 8);
+    setPop({ key, left, top });
+  };
   const [y, m] = month.split("-").map(Number);
   const first = new Date(y, m - 1, 1);
   const daysIn = new Date(y, m, 0).getDate();
@@ -183,9 +199,11 @@ function CalendarGrid({ month, rows }) {
   rows.forEach((r) => {
     const k = dayOf(r);
     if (k.slice(0, 7) === month) {
-      const o = (byDay[k] ??= { pnl: 0, n: 0 });
+      const o = (byDay[k] ??= { pnl: 0, n: 0, r: 0, trades: [] });
       o.pnl += num(r.PnL);
+      o.r += num(r.R);
       o.n++;
+      o.trades.push(r);
     }
   });
   const max = Math.max(1, ...Object.values(byDay).map((v) => Math.abs(v.pnl)));
@@ -209,12 +227,36 @@ function CalendarGrid({ month, rows }) {
             const v = byDay[`${month}-${pad(dn)}`];
             const a = v ? 0.18 + 0.55 * (Math.abs(v.pnl) / max) : 0;
             const bg = v ? (v.pnl >= 0 ? `rgba(34,197,94,${a})` : `rgba(239,68,68,${a})`) : "";
-            return html`<div class="cal-c ${v ? (v.pnl >= 0 ? "w" : "l") : ""}" style=${{ background: bg }} title=${v ? `${v.n} trade(s)` : ""}>
+            return html`<div class="cal-c ${v ? (v.pnl >= 0 ? "w" : "l") : ""}" style=${{ background: bg }} tabindex=${v ? 0 : undefined} onMouseEnter=${v ? (e) => openPop(e, `${month}-${pad(dn)}`, v.trades.length) : undefined} onMouseLeave=${v ? () => setPop(null) : undefined} onFocus=${v ? (e) => openPop(e, `${month}-${pad(dn)}`, v.trades.length) : undefined} onBlur=${v ? () => setPop(null) : undefined} onClick=${v ? (e) => (pop?.key === `${month}-${pad(dn)}` ? setPop(null) : openPop(e, `${month}-${pad(dn)}`, v.trades.length)) : undefined}>
               <span class="cal-d">${dn}</span>${v && html`<span class="cal-p">${compactMoney(v.pnl)}</span>`}</div>`;
           }),
           html`<div class="cal-c week ${any ? (wt >= 0 ? "pos" : "neg") : ""}">${any ? compactMoney(wt) : ""}</div>`,
         ];
       })}
     </div>
+    ${pop && byDay[pop.key] && html`<${DayPop} day=${pop.key} info=${byDay[pop.key]} left=${pop.left} top=${pop.top} />`}
+  </div>`;
+}
+
+// Bulle de détail d'une journée : P&L, R et chaque trade (symbole, setup, direction, résultat).
+function DayPop({ day, info, left, top }) {
+  const label = parseDate(day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const wins = info.trades.filter((t) => num(t.PnL) > 0).length;
+  return html`<div class="cal-pop" style=${{ left: left + "px", top: top + "px" }}>
+    <div class="cal-pop-head">
+      <div><strong>${label}</strong><div class="muted small-t">${info.n} trade${info.n > 1 ? "s" : ""} · ${wins}W / ${info.n - wins}L</div></div>
+      <div class="right"><div class="strong ${info.pnl >= 0 ? "pos" : "neg"}">${money(info.pnl, 0, true)}</div><div class="muted small-t">${fmtR(info.r, true)}</div></div>
+    </div>
+    ${info.trades.map((t) => {
+      const dir = normDirection(t.Direction);
+      return html`<div class="cal-pop-row">
+        <div class="cal-pop-main">
+          <div class="strong">${t.Symbole || "—"} ${dir && html`<span class="pill ${dir === "Buy" ? "buy" : dir === "Sell" ? "sell" : ""}">${dir}</span>`}</div>
+          <div class="muted small-t">${t.Setup || "No setup"}${t.log && t.log !== "Main" ? " · " + t.log : ""}${t.Risque != null && t.Risque !== "" ? " · risk " + t.Risque + "%" : ""}</div>
+          ${t.Note && html`<div class="muted small-t cal-pop-note">${t.Note}</div>`}
+        </div>
+        <div class="right"><div class="strong ${num(t.PnL) >= 0 ? "pos" : "neg"}">${money(t.PnL, 0, true)}</div><div class="muted small-t">${fmtR(t.R, true)}</div></div>
+      </div>`;
+    })}
   </div>`;
 }
