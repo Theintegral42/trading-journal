@@ -3,7 +3,9 @@ import { useStore, mutate, syncNow, signIn, signOut, exportText, importBackup, s
 import { CONFIG, getClientId } from "../config.js";
 import { dayOf, withCumulative, logNames } from "../data.js";
 import { downloadFile, readFileText, todayStr, num } from "../util.js";
-import { Icon, Card, Field, toast, confirmDialog } from "./components.js";
+import { Icon, Card, Field, Select, toast, confirmDialog } from "./components.js";
+import { setDisplayCurrency } from "./currency.js";
+import { refreshFx } from "../quotes.js";
 
 export const STATUS_LABEL = {
   local: ["Local only", "gray"],
@@ -73,8 +75,17 @@ export function SettingsView() {
             ${localStorage.getItem("tj_client_id") && html`<button class="btn ghost" onClick=${() => (localStorage.removeItem("tj_client_id"), location.reload())}>Change client ID</button>`}</div>`}
     <//>
 
+    <${Card} title="Currency">
+      <div class="form-grid" style="margin-bottom:0">
+        <${Field} label="Display currency" hint="Applies everywhere in the app (also in the sidebar)"><${Select} value=${d.settings.inv_currency === "CAD" ? "CAD" : "USD"} options=${["USD", "CAD"]} onChange=${setDisplayCurrency} /><//>
+        <${Field} label="Currency of your trading data" hint="The currency of the PnL you enter in your trade logs"><${Select} value=${d.settings.trade_currency === "CAD" ? "CAD" : "USD"} options=${["USD", "CAD"]} onChange=${(v) => { mutate((x) => (x.settings.trade_currency = v)); if (v === "CAD" && !(Number(d.settings.fx_usdcad) > 0)) refreshFx({ manual: true }); }} /><//>
+        <${Field} label="Exchange rate (1 USD = ? CAD)" hint=${d.settings.fx_date ? "Last updated " + d.settings.fx_date : "Fetched automatically once a day"}><input class="input" type="number" step="0.0001" min="0" value=${d.settings.fx_usdcad || ""} placeholder="e.g. 1.40" onChange=${(e) => mutate((x) => { x.settings.fx_usdcad = num(e.target.value); x.settings.fx_date = todayStr(); })} /><//>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn small" onClick=${() => refreshFx({ manual: true })}><${Icon} name="refresh" size=${14} />Refresh rate</button></div>
+    <//>
+
     <${Card} title="Trading parameters">
-      <${Field} label="R base ($ per 1% risk)" hint="R = PnL / (risk × base). Default 1500 (NQ)."><input class="input narrow" type="number" value=${d.settings.r_base} onChange=${(e) => mutate((x) => (x.settings.r_base = num(e.target.value, 1500) || 1500))} /><//>
+      <${Field} label="R base (trading currency per 1% risk)" hint="R = PnL / (risk × base). Default 1500 (NQ)."><input class="input narrow" type="number" value=${d.settings.r_base} onChange=${(e) => mutate((x) => (x.settings.r_base = num(e.target.value, 1500) || 1500))} /><//>
     <//>
 
     <${Card} title="Backup & export">

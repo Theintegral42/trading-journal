@@ -35,16 +35,35 @@ export function num(v, def = 0) {
 
 export const round2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
 
-export function money(n, dec = 0, sign = false) {
+// ---------- devise d'affichage globale ----------
+// Les données de trading sont saisies dans une devise de base (USD par défaut). money() les convertit
+// automatiquement vers la devise choisie (USD / CAD). `factor` est calculé par le store (voir applyDisplay).
+let DISP = { cur: "USD", base: "USD", factor: 1 };
+export function setDisplay(cur, base, factor) {
+  DISP = { cur, base, factor: factor > 0 ? factor : 1 };
+}
+export const displayCurrency = () => DISP.cur;
+export const baseCurrency = () => DISP.base;
+export const displayFactor = () => DISP.factor;
+export const displaySymbol = () => (DISP.cur === "CAD" ? "C$" : "$");
+
+// Formatage brut, sans conversion.
+export function moneyRaw(n, dec = 0, sign = false) {
   const v = Number(n) || 0;
   const s = Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
   const prefix = v < 0 ? "-" : sign && v > 0 ? "+" : "";
   return `${prefix}$${s}`;
 }
 
+// Montant de trading (devise de base) affiché dans la devise choisie.
+export function money(n, dec = 0, sign = false) {
+  const s = moneyRaw((Number(n) || 0) * DISP.factor, dec, sign);
+  return DISP.cur === "CAD" ? s.replace("$", "C$") : s;
+}
+
 // Montant abrégé pour les petites cellules : 1830 -> +1.8k
 export function compactMoney(n) {
-  const v = Number(n) || 0;
+  const v = (Number(n) || 0) * DISP.factor;
   const a = Math.abs(v);
   const s = a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 0 : 1) + "k" : String(Math.round(a));
   return (v < 0 ? "-" : v > 0 ? "+" : "") + s;

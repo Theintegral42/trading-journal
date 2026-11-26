@@ -1,7 +1,7 @@
 import { html, useState } from "../lib/preact-htm.js";
 import { store, useStore, mutate, setUI, mainRows } from "../store.js";
 import { COLUMNS, normRow, normDirection, computeR, dayOf, logNames, withCumulative } from "../data.js";
-import { todayStr, money, num, parseCSV, readFileText, readFileBuffer, loadScript } from "../util.js";
+import { todayStr, money, baseCurrency, num, parseCSV, readFileText, readFileBuffer, loadScript } from "../util.js";
 import { Icon, Card, Modal, Segmented, Field, Empty, toast, confirmDialog } from "./components.js";
 
 export function currentLog(s) {
@@ -251,7 +251,7 @@ function TradeForm({ initial, onClose, onSave }) {
         <input class="input" inputmode="decimal" list="dl-rr" value=${f.RR} onInput=${(e) => set({ RR: e.target.value })} />
         <datalist id="dl-rr">${d.rr_options.map((o) => html`<option value=${o}></option>`)}</datalist>
       <//>
-      <${Field} label="PnL ($)"><input class="input" inputmode="decimal" placeholder="e.g. 1250 or -480" value=${f.PnL} onInput=${(e) => set({ PnL: e.target.value, Résultat: num(e.target.value) > 0 ? "W" : num(e.target.value) < 0 ? "L" : f.Résultat })} /><//>
+      <${Field} label=${"PnL (" + baseCurrency() + ")"}><input class="input" inputmode="decimal" placeholder="e.g. 1250 or -480" value=${f.PnL} onInput=${(e) => set({ PnL: e.target.value, Résultat: num(e.target.value) > 0 ? "W" : num(e.target.value) < 0 ? "L" : f.Résultat })} /><//>
       <${Field} label="Result"><${Segmented} value=${f.Résultat} options=${[{ value: "W", label: "Win" }, { value: "L", label: "Loss" }]} onChange=${(v) => set({ Résultat: v })} /><//>
       <${Field} label="R" hint=${rTouched ? "Manual value" : `Auto: PnL / (risk × ${base})`}><input class="input" inputmode="decimal" value=${rVal} onInput=${(e) => (setRTouched(true), set({ R: e.target.value }))} /><//>
     </div>

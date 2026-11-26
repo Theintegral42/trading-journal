@@ -120,7 +120,8 @@ export async function refreshPrices({ force = false, quiet = false } = {}) {
 export function startAutoRefresh() {
   const tick = () => {
     if (!store.ready || document.visibilityState !== "visible" || !navigator.onLine) return;
-    if ((store.data.settings.inv_currency === "CAD" || hasCadAssets(store.data)) && store.data.settings.fx_date !== todayStr()) refreshFx();
+    const st = store.data.settings;
+    if ((st.inv_currency === "CAD" || st.trade_currency === "CAD" || hasCadAssets(store.data)) && st.fx_date !== todayStr()) refreshFx();
     if (!store.data.settings.av_key || store.data.settings.av_auto === false) return;
     refreshPrices({ quiet: true });
   };

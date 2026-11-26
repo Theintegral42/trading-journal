@@ -1,7 +1,7 @@
 import { html, useState } from "../lib/preact-htm.js";
 import { useStore, mutate } from "../store.js";
 import { TYPES, portfolio, byClass, snapshotToday, costSeries, normSymbol, txTotal, fxOf, moneyFx, nat, assetCur, hasCadAssets } from "../invest.js";
-import { money, num, round2, todayStr } from "../util.js";
+import { num, round2, todayStr } from "../util.js";
 import { refreshPrices, refreshFx } from "../quotes.js";
 import { Icon, Card, Modal, Field, Segmented, Select, TextArea, Empty, ChartCanvas, toast, confirmDialog } from "./components.js";
 
@@ -29,11 +29,6 @@ export function InvestmentView() {
   const pf = portfolio(d, acc);
   const hasData = d.inv_transactions.length > 0;
   const fx = fxOf(d);
-  const setCur = (c) => {
-    mutate((x) => (x.settings.inv_currency = c));
-    if (c === "CAD" && d.settings.fx_date !== todayStr()) refreshFx({ manual: true });
-  };
-
   return html`<div class="page">
     <div class="page-head">
       <div><h1>Investment</h1><div class="muted">Portfolio, transactions and allocation</div></div>
@@ -41,13 +36,12 @@ export function InvestmentView() {
         <div class="segmented">
           ${[["overview", "Portfolio"], ["transactions", "Transactions"], ["allocation", "Allocation"], ["strategy", "Strategy"]].map(([id, label]) => html`<button class=${tab === id ? "active" : ""} onClick=${() => setTab(id)}>${label}</button>`)}
         </div>
-        ${tab !== "strategy" && html`<${Segmented} value=${fx.cur} options=${["USD", "CAD"]} onChange=${setCur} />`}
         ${tab !== "strategy" && html`<button class="btn primary" onClick=${() => setForm({ index: null })}><${Icon} name="plus" size=${16} />Transaction</button>`}
       </div>
     </div>
 
     ${tab !== "strategy" && fx.cur === "CAD" && html`<div class="fx-row">
-      <span class="muted small-t">Displayed in CAD · your data stays in USD · 1 USD =</span>
+      <span class="muted small-t">Displayed in CAD · 1 USD =</span>
       <input class="input mini num-in" type="number" step="0.0001" min="0" value=${d.settings.fx_usdcad || ""} placeholder="rate" onChange=${(e) => mutate((x) => { x.settings.fx_usdcad = num(e.target.value); x.settings.fx_date = todayStr(); })} />
       <span class="muted small-t">CAD${d.settings.fx_date ? " · " + d.settings.fx_date : ""}</span>
       <button class="btn small ghost" onClick=${() => refreshFx({ manual: true })}><${Icon} name="refresh" size=${14} />Refresh rate</button>

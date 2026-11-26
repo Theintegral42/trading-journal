@@ -3,7 +3,7 @@ import { useState, useEffect } from "./lib/preact-htm.js";
 import * as cloud from "./cloud.js";
 import { idbGet, idbSet } from "./idb.js";
 import { emptyData, normalize, serialize, parseJSONLoose, isEmptyData, computeMain } from "./data.js";
-import { debounce, todayStr } from "./util.js";
+import { debounce, todayStr, setDisplay } from "./util.js";
 
 export const store = {
   data: emptyData(),
@@ -15,7 +15,20 @@ export const store = {
 };
 
 const listeners = new Set();
-const emit = () => listeners.forEach((f) => f());
+// Devise d'affichage globale : convertit les montants de trading (devise de base) vers USD ou CAD.
+function applyDisplay(d) {
+  const s = d.settings || {};
+  const disp = s.inv_currency === "CAD" ? "CAD" : "USD";
+  const base = s.trade_currency === "CAD" ? "CAD" : "USD";
+  const r = Number(s.fx_usdcad) > 0 ? Number(s.fx_usdcad) : 0;
+  let factor = 1;
+  if (disp !== base && r) factor = base === "USD" ? r : 1 / r;
+  setDisplay(disp, base, factor);
+}
+const emit = () => {
+  applyDisplay(store.data);
+  listeners.forEach((f) => f());
+};
 export const subscribe = (f) => (listeners.add(f), () => listeners.delete(f));
 
 export function useStore() {

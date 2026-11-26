@@ -9,6 +9,7 @@ import { TradeLogView } from "./ui/tradelog.js";
 import { NotesView } from "./ui/notes.js";
 import { InvestmentView } from "./ui/investment.js";
 import { startAutoRefresh } from "./quotes.js";
+import { CurrencySwitch } from "./ui/currency.js";
 import { readFileText } from "./util.js";
 import { getClientId } from "./config.js";
 
@@ -100,6 +101,7 @@ function App() {
         ${PAGES.filter((p) => p.id !== "settings").map((p) => html`<button class="nav-item ${page === p.id ? "active" : ""}" onClick=${() => go(p.id)}><${Icon} name=${p.icon} />${p.label}</button>`)}
       </nav>
       <div class="sidebar-foot">
+        <${CurrencySwitch} />
         <${SyncPill} onClick=${() => (s.sync.account ? syncNow() : go("settings"))} />
         <button class="nav-item ${page === "settings" ? "active" : ""}" onClick=${() => go("settings")}><${Icon} name="settings" />Settings</button>
       </div>
@@ -107,7 +109,7 @@ function App() {
 
     <header class="topbar">
       <div class="brand"><div class="logo"><${Icon} name="logo" size=${18} /></div><span>${(PAGES.find((p) => p.id === page) || PAGES[0]).label}</span></div>
-      <${SyncPill} onClick=${() => (s.sync.account ? syncNow() : go("settings"))} />
+      <div class="row gap-s"><${CurrencySwitch} /><${SyncPill} onClick=${() => (s.sync.account ? syncNow() : go("settings"))} /></div>
     </header>
 
     <main class="main">

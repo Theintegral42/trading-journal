@@ -1,5 +1,5 @@
 // Calculs du portefeuille d'investissement (méthode du coût moyen).
-import { num, round2, todayStr, money } from "./util.js";
+import { num, round2, todayStr, moneyRaw } from "./util.js";
 
 // ---------- devises ----------
 // Chaque titre a sa devise (USD par défaut, ou CAD). En interne, les totaux sont calculés en USD
@@ -17,7 +17,7 @@ export function toUsd(d, sym, v) {
 }
 // Montant dans la devise native d'un titre (aucune conversion), ex. prix d'une action.
 export const nat = (n, dec, cur) => {
-  const s = money(Number(n) || 0, dec);
+  const s = moneyRaw(Number(n) || 0, dec);
   return cur === "CAD" ? s.replace("$", "C$") : s;
 };
 
@@ -33,7 +33,7 @@ export function moneyFx(d) {
   return (n, dec = 0, sign = false, src = "USD") => {
     let v = Number(n) || 0;
     if (src === "CAD" && r) v = v / r;
-    const s = money(v * rate, dec, sign);
+    const s = moneyRaw(v * rate, dec, sign);
     return cur === "CAD" ? s.replace("$", "C$") : s;
   };
 }

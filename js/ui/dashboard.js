@@ -1,7 +1,7 @@
 import { html, useState } from "../lib/preact-htm.js";
 import { useStore, mutate, mainRows } from "../store.js";
 import { computeStats, groupStats, periodFilter, dayOf, normDirection } from "../data.js";
-import { money, fmtR, num, pad, parseDate, round2, compactMoney } from "../util.js";
+import { money, fmtR, num, pad, parseDate, round2, compactMoney, displayFactor, displaySymbol, baseCurrency } from "../util.js";
 import { Icon, Card, Select, Empty, ChartCanvas } from "./components.js";
 import { LogPicker, currentLog } from "./tradelog.js";
 
@@ -63,6 +63,7 @@ export function DashboardView() {
   const bySetup = groupStats(rows, (r) => r.Setup).sort((a, b) => b.pnl - a.pnl);
   const byWd = groupStats(rows, (r) => WEEKDAYS[(parseDate(dayOf(r)).getDay() + 6) % 7]).sort((a, b) => WEEKDAYS.indexOf(a.key) - WEEKDAYS.indexOf(b.key));
 
+  const F = displayFactor(); // conversion devise de base -> devise d'affichage (graphiques)
   const axis = { grid: { color: GRID }, border: { display: false }, ticks: { color: "#8b93a7" } };
   const tip = { backgroundColor: "#0b0d12", borderColor: "#2a2f3a", borderWidth: 1, padding: 10, titleColor: "#e6e9f0", bodyColor: "#c5cad6", displayColors: false };
 
@@ -74,7 +75,7 @@ export function DashboardView() {
     html`<div class="card target">
       <div class="row between wrap gap">
         <div class="row gap-s"><${Icon} name="target" size=${18} /><strong>Target</strong><span class="muted">${money(allStats.total, 0)} / ${money(target, 0)}</span></div>
-        <div class="row gap-s"><span class="muted small-t">Target ($)</span><input class="input narrow" type="number" step="500" value=${target} onChange=${(e) => mutate((x) => (x.log_targets[log] = num(e.target.value)))} /></div>
+        <div class="row gap-s"><span class="muted small-t">${"Target (" + baseCurrency() + ")"}</span><input class="input narrow" type="number" step="500" value=${target} onChange=${(e) => mutate((x) => (x.log_targets[log] = num(e.target.value)))} /></div>
       </div>
       <div class="progress"><div class="bar ${allStats.total < 0 ? "neg" : ""}" style=${{ width: progress * 100 + "%" }}></div></div>
       <div class="muted small-t">${(progress * 100).toFixed(0)}% reached</div>
@@ -103,7 +104,7 @@ export function DashboardView() {
             labels: rows.map((r, i) => i + 1),
             datasets: [
               {
-                data: eq,
+                data: eq.map((v) => round2(v * F)),
                 borderColor: BLUE,
                 borderWidth: 2,
                 pointRadius: rows.length > 80 ? 0 : 3,
@@ -126,9 +127,9 @@ export function DashboardView() {
             interaction: { mode: "index", intersect: false },
             plugins: {
               legend: { display: false },
-              tooltip: { ...tip, callbacks: { title: (i) => `Trade #${i[0].label} · ${dayOf(rows[i[0].dataIndex])}`, label: (c) => `Equity ${money(c.parsed.y, 0)}  (trade ${money(rows[c.dataIndex].PnL, 0, true)})` } },
+              tooltip: { ...tip, callbacks: { title: (i) => `Trade #${i[0].label} · ${dayOf(rows[i[0].dataIndex])}`, label: (c) => `Equity ${money(c.parsed.y / F, 0)}  (trade ${money(rows[c.dataIndex].PnL, 0, true)})` } },
             },
-            scales: { x: { ...axis, grid: { display: false }, ticks: { ...axis.ticks, maxTicksLimit: 8 } }, y: { ...axis, ticks: { ...axis.ticks, callback: (v) => "$" + v.toLocaleString() } } },
+            scales: { x: { ...axis, grid: { display: false }, ticks: { ...axis.ticks, maxTicksLimit: 8 } }, y: { ...axis, ticks: { ...axis.ticks, callback: (v) => displaySymbol() + v.toLocaleString() } } },
           }}
         />
       <//>
@@ -141,8 +142,8 @@ export function DashboardView() {
         <${ChartCanvas}
           type="line"
           height=${200}
-          data=${{ labels: rows.map((r, i) => i + 1), datasets: [{ data: dd, borderColor: RED, borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: "rgba(239,68,68,0.18)", tension: 0.2 }] }}
-          options=${{ plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { label: (c) => money(c.parsed.y, 0) } } }, scales: { x: { display: false }, y: { ...axis, ticks: { ...axis.ticks, callback: (v) => "$" + v.toLocaleString() } } } }}
+          data=${{ labels: rows.map((r, i) => i + 1), datasets: [{ data: dd.map((v) => round2(v * F)), borderColor: RED, borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: "rgba(239,68,68,0.18)", tension: 0.2 }] }}
+          options=${{ plugins: { legend: { display: false }, tooltip: { ...tip, callbacks: { label: (c) => money(c.parsed.y / F, 0) } } }, scales: { x: { display: false }, y: { ...axis, ticks: { ...axis.ticks, callback: (v) => displaySymbol() + v.toLocaleString() } } } }}
         />
       <//>
 
