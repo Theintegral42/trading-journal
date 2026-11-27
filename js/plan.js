@@ -17,7 +17,8 @@ export function defaultPlan() {
   return {
     risk_pct: 5,
     start_balance: 15000,
-    source: "Main", // "Main", un nom de log, ou "manual"
+    source: "none", // "none" (pas de solde, on coche à la main), "Main", un nom de log, ou "manual"
+    source_set: true,
     manual_balance: 15000,
     rules: "",
     tiers: DEFAULT_TIERS.map(([target, label]) => ({ id: uid(), target, risk: null, label, done: false, date: "", note: "" })),
@@ -44,7 +45,9 @@ export function normPlan(raw) {
   return {
     risk_pct: num(raw.risk_pct, 5) || 5,
     start_balance: start,
-    source: raw.source || "Main",
+    // Ancien défaut "Main" jamais choisi explicitement -> pas de suivi du solde.
+    source: !raw.source || (raw.source === "Main" && !raw.source_set) ? "none" : raw.source,
+    source_set: true,
     manual_balance: num(raw.manual_balance, start),
     rules: raw.rules || "",
     tiers,
@@ -56,6 +59,7 @@ export const tierRisk = (plan, t) => (t.risk != null ? t.risk : round2((t.target
 
 // Solde du compte et courbe (solde de départ + P&L cumulé du log choisi). `rows` : trades triés par date.
 export function balanceOf(plan, rows) {
+  if (plan.source === "none") return { balance: 0, series: [] };
   if (plan.source === "manual") return { balance: plan.manual_balance, series: [] };
   let bal = plan.start_balance;
   const series = [{ date: "", bal, pnl: 0 }];
