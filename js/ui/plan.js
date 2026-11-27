@@ -110,12 +110,12 @@ export function PlanView() {
 
     ${track && an.next && html`<div class="card plan-progress">
       <div class="row between wrap gap-s"><strong>Progress to ${money(an.next.target, 0)}</strong><span class="strong">${(an.pct * 100).toFixed(0)}%</span></div>
-      <div class="bar"><span style=${{ width: an.pct * 100 + "%" }}></span></div>
+      <div class="plan-bar"><span style=${{ width: an.pct * 100 + "%" }}></span></div>
       <div class="row between small-t muted"><span>${money(an.current ? an.current.target : plan.start_balance, 0)}</span><span>${money(an.next.target, 0)}</span></div>
     </div>`}
     ${!track && an.tiers.length > 0 && html`<div class="card plan-progress">
       <div class="row between wrap gap-s"><strong>Plan progress</strong><span class="strong">${doneCount} / ${an.tiers.length}</span></div>
-      <div class="bar"><span style=${{ width: (doneCount / an.tiers.length) * 100 + "%" }}></span></div>
+      <div class="plan-bar"><span style=${{ width: (doneCount / an.tiers.length) * 100 + "%" }}></span></div>
     </div>`}
 
     <div class="dash-grid">
@@ -146,7 +146,7 @@ export function PlanView() {
                   <div class="strong">${t.label || html`<span class="muted">No title</span>`}</div>
                   ${t.note && html`<div class="muted small-t tier-note">${t.note}</div>`}
                   ${t.done && t.date && html`<div class="muted small-t">Reached ${t.date}</div>`}
-                  ${track && isNext && !reached && html`<div class="bar thin"><span style=${{ width: an.pct * 100 + "%" }}></span></div>`}
+                  ${track && isNext && !reached && html`<div class="plan-bar thin"><span style=${{ width: an.pct * 100 + "%" }}></span></div>`}
                 </div>
                 <span class="pill ${t.done ? "buy" : reached ? "warn" : isNext ? "info" : ""}">${t.done ? "Reached" : reached ? "Confirm" : isNext ? "Next" : "Locked"}</span>
                 <div class="actions"><button class="icon-btn" aria-label="Edit" onClick=${() => setEdit({ id: t.id })}><${Icon} name="edit" size=${16} /></button><button class="icon-btn" aria-label="Delete" onClick=${() => remove(t)}><${Icon} name="trash" size=${16} /></button></div>

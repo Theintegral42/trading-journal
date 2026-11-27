@@ -1,5 +1,5 @@
 // Service worker : l'app fonctionne hors-ligne (réseau d'abord, cache en secours).
-const CACHE = "tj-v2.8.2";
+const CACHE = "tj-v2.8.3";
 
 self.addEventListener("install", (e) => {
   self.skipWaiting();
