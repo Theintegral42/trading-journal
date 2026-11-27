@@ -9,6 +9,7 @@ import { TradeLogView } from "./ui/tradelog.js";
 import { NotesView } from "./ui/notes.js";
 import { InvestmentView } from "./ui/investment.js";
 import { startAutoRefresh } from "./quotes.js";
+import { PlanView } from "./ui/plan.js";
 import { CurrencySwitch } from "./ui/currency.js";
 import { readFileText } from "./util.js";
 import { getClientId } from "./config.js";
@@ -17,6 +18,7 @@ const PAGES = [
   { id: "dashboard", label: "Dashboard", icon: "dashboard", view: DashboardView },
   { id: "journal", label: "Journal", icon: "journal", view: JournalView },
   { id: "trades", label: "Trade Log", icon: "list", view: TradeLogView },
+  { id: "plan", label: "Plan", icon: "target", view: PlanView },
   { id: "notes", label: "Notes", icon: "notes", view: NotesView },
   { id: "invest", label: "Investment", icon: "briefcase", view: InvestmentView },
   { id: "settings", label: "Settings", icon: "settings", view: SettingsView },

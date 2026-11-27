@@ -143,14 +143,14 @@ export function Empty({ icon = "list", title, children }) {
   return html`<div class="empty"><${Icon} name=${icon} size=${34} /><h4>${title}</h4><p class="muted">${children}</p></div>`;
 }
 
-export function ChartCanvas({ type, data, options, height = 280 }) {
+export function ChartCanvas({ type, data, options, height = 280, plugins }) {
   const ref = useRef();
   const chart = useRef();
   const sig = JSON.stringify([type, data, options?.plugins?.annotation ?? null]);
   useEffect(() => {
     if (!window.Chart) return;
     chart.current?.destroy();
-    chart.current = new window.Chart(ref.current, { type, data, options: { responsive: true, maintainAspectRatio: false, ...options } });
+    chart.current = new window.Chart(ref.current, { type, data, options: { responsive: true, maintainAspectRatio: false, ...options }, plugins: plugins || [] });
     return () => chart.current?.destroy();
   }, [sig]);
   return html`<div class="chart-wrap" style=${{ height: height + "px" }}><canvas ref=${ref}></canvas></div>`;

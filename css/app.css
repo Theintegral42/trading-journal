@@ -201,6 +201,32 @@ input.date { width: auto; }
 .bar-cell span.g { background: var(--green); } .bar-cell span.r { background: var(--red); }
 .bar-cell b { position: relative; z-index: 1; font-weight: 600; padding: 0 4px; }
 
+/* plan */
+.pill.warn { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.pill.info { background: rgba(96, 165, 250, 0.16); color: #93c5fd; }
+.bar { height: 10px; border-radius: 99px; background: #1b212c; overflow: hidden; margin: 10px 0 6px; }
+.bar > span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #60a5fa, #22c55e); transition: width 0.4s; }
+.bar.thin { height: 6px; margin: 8px 0 0; max-width: 320px; }
+.plan-progress { padding: 14px 18px; }
+.tiers { display: grid; gap: 10px; padding: 14px; }
+.tier { display: grid; grid-template-columns: auto minmax(120px, 0.9fr) minmax(0, 2fr) auto auto; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: #10131a; }
+.tier.done { border-color: rgba(34, 197, 94, 0.4); background: linear-gradient(90deg, rgba(34, 197, 94, 0.09), #10131a 70%); }
+.tier.next { border-color: rgba(96, 165, 250, 0.55); box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2); }
+.tier.ready { border-color: rgba(251, 191, 36, 0.65); background: linear-gradient(90deg, rgba(251, 191, 36, 0.08), #10131a 70%); }
+.tier-target { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tier-note { white-space: pre-wrap; }
+.tick { width: 30px; height: 30px; border-radius: 9px; border: 2px solid #3a4150; background: transparent; display: grid; place-items: center; cursor: pointer; color: #07130b; padding: 0; transition: background 0.15s, border-color 0.15s; }
+.tick:hover { border-color: var(--green); }
+.tick.on { background: var(--green); border-color: var(--green); }
+.tier .actions { display: flex; gap: 2px; }
+@media (max-width: 820px) {
+  .tier { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 8px; }
+  .tier-body { grid-column: 1 / -1; order: 5; }
+  .tier .pill { justify-self: end; }
+  .tier .actions { grid-column: 3; justify-self: end; grid-row: 1; }
+  .tier .pill { grid-column: 3; grid-row: 2; }
+}
+
 /* calendar day popover */
 .cal-c[tabindex] { cursor: pointer; outline: none; transition: transform 0.12s, box-shadow 0.12s; }
 .cal-c[tabindex]:hover, .cal-c[tabindex]:focus-visible { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }

@@ -1,6 +1,7 @@
 // Modèle de données — 100 % compatible avec le JSON de l'app Streamlit d'origine.
 import { num, round2, parseDate, fmtDate } from "./util.js";
 import { DEFAULT_ACCOUNTS, DEFAULT_CLASSES } from "./invest.js";
+import { defaultPlan, normPlan } from "./plan.js";
 
 export const COLUMNS = ["Date", "Symbole", "Setup", "Direction", "Risque", "RR", "Résultat", "PnL", "R", "Note"];
 export const DEFAULT_TEMPLATE = "Date: {date}\n\nHTF Context: \nLevels: \n\nLong scenario if: \nShort scenario if: \n\nNote: \n";
@@ -26,6 +27,7 @@ export function emptyData() {
     inv_snapshots: [],
     inv_accounts: [...DEFAULT_ACCOUNTS],
     inv_classes: [...DEFAULT_CLASSES],
+    plan: defaultPlan(),
     settings: { r_base: 1500 },
   };
 }
@@ -107,6 +109,7 @@ export function normalize(raw) {
   d.inv_snapshots = Array.isArray(raw.inv_snapshots) ? raw.inv_snapshots : [];
   if (raw.inv_accounts?.length) d.inv_accounts = raw.inv_accounts;
   if (raw.inv_classes?.length) d.inv_classes = raw.inv_classes;
+  d.plan = normPlan(raw.plan);
   return d;
 }
 
@@ -171,6 +174,7 @@ export function serialize(data) {
     inv_snapshots: data.inv_snapshots,
     inv_accounts: data.inv_accounts,
     inv_classes: data.inv_classes,
+    plan: data.plan,
     settings: data.settings,
   });
 }
