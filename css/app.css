@@ -218,6 +218,7 @@ input.date { width: auto; }
 .tick { width: 30px; height: 30px; border-radius: 9px; border: 2px solid #3a4150; background: transparent; display: grid; place-items: center; cursor: pointer; color: #07130b; padding: 0; transition: background 0.15s, border-color 0.15s; }
 .tick:hover { border-color: var(--green); }
 .tick.on { background: var(--green); border-color: var(--green); }
+.tick.static { cursor: default; }
 .tier .actions { display: flex; gap: 2px; }
 @media (max-width: 820px) {
   .tier { grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 8px; }

@@ -102,8 +102,8 @@ export function PlanView() {
 
     <div class="kpi-grid">
       ${track && html`<${Kpi} label="Account balance" value=${money(balance, 0)} sub=${`${growth >= 0 ? "+" : ""}${growth.toFixed(1)}% since ${money(plan.start_balance, 0)}`} tone=${tone(growth)} />`}
-      <${Kpi} label="Max risk / trade now" value=${money(an.riskNow, 0)} sub=${an.riskTier ? (track ? `${balance ? ((an.riskNow / balance) * 100).toFixed(1) : 0}% of balance · ` : "") + `${money(an.riskTier.target, 0)} milestone` : "Add a milestone"} />
-      <${Kpi} label="Current milestone" value=${an.current ? money(an.current.target, 0) : "—"} sub=${an.current ? an.current.label || "Reached" : "None ticked yet"} />
+      <${Kpi} label="Max risk / trade now" value=${money(an.riskNow, 0)} sub=${(track && balance ? `${((an.riskNow / balance) * 100).toFixed(1)}% of balance · ` : "") + (an.riskTier ? `${money(an.riskTier.target, 0)} milestone` : `starting point ${money(plan.start_balance, 0)}`)} />
+      <${Kpi} label="Current milestone" value=${an.current ? money(an.current.target, 0) : "Start"} sub=${an.current ? an.current.label || "Reached" : `Starting point · ${money(plan.start_balance, 0)}`} />
       <${Kpi} label="Next milestone" value=${an.next ? money(an.next.target, 0) : "Done"} sub=${an.next ? (track ? (balance >= an.next.target ? `Reached — tick it to unlock risk ${money(tierRisk(plan, an.next), 0)}` : `${money(an.next.target - balance, 0)} to go · risk ${money(tierRisk(plan, an.next), 0)}`) : `Risk ${money(tierRisk(plan, an.next), 0)} once ticked`) : "All milestones reached"} />
       ${!track && html`<${Kpi} label="Milestones reached" value=${`${doneCount} / ${an.tiers.length}`} sub=${an.tiers.length ? `${((doneCount / an.tiers.length) * 100).toFixed(0)}% of the plan` : ""} />`}
     </div>
@@ -120,8 +120,19 @@ export function PlanView() {
 
     <div class="dash-grid">
       <${Card} title="Milestones" class="span-2" pad=${false}>
-        ${an.tiers.length
-          ? html`<div class="tiers">${an.tiers.map((t) => {
+        ${true
+          ? html`<div class="tiers">
+            <div class="tier done start">
+              <div class="tick on static" aria-hidden="true"><${Icon} name="target" size=${16} /></div>
+              <div class="tier-main">
+                <div class="tier-target">${money(plan.start_balance, 0)}</div>
+                <div class="muted small-t">Max risk <strong>${money(an.startRisk, 0)}</strong> (${plan.risk_pct}%)</div>
+              </div>
+              <div class="tier-body"><div class="strong">Starting point</div><div class="muted small-t">Where the plan begins</div></div>
+              <span class="pill ${an.current ? "" : "buy"}">${an.current ? "Passed" : "Current"}</span>
+              <div class="actions"><button class="icon-btn" aria-label="Edit starting point" onClick=${() => setSettings(true)}><${Icon} name="edit" size=${16} /></button></div>
+            </div>
+            ${an.tiers.map((t) => {
               const isNext = an.next && t.id === an.next.id;
               const reached = track && !t.done && balance >= t.target;
               const cls = t.done ? "done" : reached ? "ready" : isNext ? "next" : "locked";
@@ -140,8 +151,9 @@ export function PlanView() {
                 <span class="pill ${t.done ? "buy" : reached ? "warn" : isNext ? "info" : ""}">${t.done ? "Reached" : reached ? "Confirm" : isNext ? "Next" : "Locked"}</span>
                 <div class="actions"><button class="icon-btn" aria-label="Edit" onClick=${() => setEdit({ id: t.id })}><${Icon} name="edit" size=${16} /></button><button class="icon-btn" aria-label="Delete" onClick=${() => remove(t)}><${Icon} name="trash" size=${16} /></button></div>
               </div>`;
-            })}</div>`
-          : html`<div class="pad muted">No milestones yet. Use the Milestone button to add your first one.</div>`}
+            })}
+            ${!an.tiers.length && html`<div class="muted">No milestones yet. Use the Milestone button to add your first one.</div>`}</div>`
+          : null}
       <//>
 
       <${Card} title="Rules & conditions" actions=${html`<span class="muted small-t">When to scale up, when to step back</span>`}>
@@ -213,7 +225,7 @@ function PlanSettings({ onClose }) {
     <div class="stack">
       <${Field} label="Risk per trade (% of the milestone account)" hint="Default max risk of each milestone. You can still set a custom amount per milestone."><input class="input" inputmode="decimal" value=${f.risk_pct} onInput=${(e) => set({ risk_pct: e.target.value })} /><//>
       <${Field} label="Balance source" hint=${track ? "Balance = starting balance + total P&L of the log you pick." : "The plan only follows the milestones you tick. No account balance is shown."}><${Select} value=${f.source} options=${sources} onChange=${(v) => set({ source: v })} /><//>
-      ${track && html`<${Field} label=${`Starting balance (${cur})`}><input class="input" inputmode="decimal" value=${f.start_balance} onInput=${(e) => set({ start_balance: e.target.value })} /><//>`}
+      <${Field} label=${`Starting point (${cur})`} hint="Where your plan begins. Its max risk uses the risk % above."><input class="input" inputmode="decimal" value=${f.start_balance} onInput=${(e) => set({ start_balance: e.target.value })} /><//>
       ${f.source === "manual" && html`<${Field} label=${`Current balance (${cur})`}><input class="input" inputmode="decimal" value=${f.manual_balance} onInput=${(e) => set({ manual_balance: e.target.value })} /><//>`}
     </div>
     <div class="row end gap" style="margin-top:18px"><button class="btn" onClick=${onClose}>Cancel</button>

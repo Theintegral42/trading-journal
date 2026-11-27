@@ -3,7 +3,6 @@ import { num, round2 } from "./util.js";
 
 // Paliers par défaut (modifiables dans l'app).
 const DEFAULT_TIERS = [
-  [15000, "Point de départ"],
   [20000, "Premier palier"],
   [30000, "Doubler le risque $"],
   [50000, "Palier confortable"],
@@ -42,7 +41,10 @@ export function normPlan(raw) {
           note: t.note || "",
         }))
     : base.tiers;
+  // Le point de départ n'est plus un palier : on retire l'ancien palier par défaut "Point de départ" (une seule fois).
+  const kept = raw.start_row ? tiers : tiers.filter((t) => !(t.label === "Point de départ" && t.target === start));
   return {
+    start_row: true,
     risk_pct: num(raw.risk_pct, 5) || 5,
     start_balance: start,
     // Ancien défaut "Main" jamais choisi explicitement -> pas de suivi du solde.
@@ -50,7 +52,7 @@ export function normPlan(raw) {
     source_set: true,
     manual_balance: num(raw.manual_balance, start),
     rules: raw.rules || "",
-    tiers,
+    tiers: kept,
   };
 }
 
@@ -77,9 +79,10 @@ export function analyze(plan, balance) {
   const done = tiers.filter((t) => t.done);
   const current = done.length ? done[done.length - 1] : null; // dernier palier confirmé (coché)
   const next = tiers.find((t) => !t.done && (!current || t.target > current.target)) || null;
-  const riskTier = current || tiers[0] || null; // sans palier coché : on applique le premier palier
+  const riskTier = current; // sans palier coché : on est au point de départ
+  const startRisk = round2((plan.start_balance * plan.risk_pct) / 100);
   const from = current ? current.target : plan.start_balance;
   const pct = next && next.target > from ? Math.min(Math.max((balance - from) / (next.target - from), 0), 1) : next ? 0 : 1;
   const ready = tiers.filter((t) => !t.done && balance >= t.target); // atteints mais pas encore cochés
-  return { tiers, current, next, riskTier, riskNow: riskTier ? tierRisk(plan, riskTier) : 0, pct, ready };
+  return { tiers, current, next, riskTier, riskNow: riskTier ? tierRisk(plan, riskTier) : startRisk, startRisk, pct, ready };
 }
