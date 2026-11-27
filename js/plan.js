@@ -20,6 +20,8 @@ export function defaultPlan() {
     source_set: true,
     manual_balance: 15000,
     rules: "",
+    ev_custom: [], // jours No-trade ajoutés à la main : { id, date, title, note }
+    ev_over: {}, // modifications des événements automatiques : { [clé]: { hidden, title, note } }
     tiers: DEFAULT_TIERS.map(([target, label]) => ({ id: uid(), target, risk: null, label, done: false, date: "", note: "" })),
   };
 }
@@ -52,6 +54,10 @@ export function normPlan(raw) {
     source_set: true,
     manual_balance: num(raw.manual_balance, start),
     rules: raw.rules || "",
+    ev_custom: Array.isArray(raw.ev_custom)
+      ? raw.ev_custom.filter((c) => c && /^\d{4}-\d{2}-\d{2}$/.test(String(c.date))).map((c) => ({ id: c.id || uid(), date: String(c.date), title: c.title || "No-trade", note: c.note || "" }))
+      : [],
+    ev_over: raw.ev_over && typeof raw.ev_over === "object" && !Array.isArray(raw.ev_over) ? raw.ev_over : {},
     tiers: kept,
   };
 }

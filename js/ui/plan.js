@@ -1,8 +1,9 @@
 import { html, useState } from "../lib/preact-htm.js";
 import { useStore, mutate, mainRows } from "../store.js";
 import { dayOf, logNames } from "../data.js";
-import { money, num, round2, todayStr, displayFactor, displaySymbol, baseCurrency } from "../util.js";
+import { money, num, round2, todayStr, addDays, parseDate, displayFactor, displaySymbol, baseCurrency } from "../util.js";
 import { uid, tierRisk, balanceOf, analyze } from "../plan.js";
+import { KINDS, autoEvents, eventsInRange, daysFromToday } from "../events.js";
 import { Icon, Card, Modal, Field, Select, TextArea, ChartCanvas, toast, confirmDialog } from "./components.js";
 
 const GREEN = "#22c55e", BLUE = "#60a5fa", GREY = "#64748b", AMBER = "#fbbf24";
@@ -160,6 +161,8 @@ export function PlanView() {
         <${TextArea} value=${plan.rules} minRows=${8} placeholder="e.g. Only move to the next tier after 2 consecutive green months. Drop back one tier if drawdown exceeds 10%." onInput=${(v) => mutate((x) => (x.plan.rules = v))} />
       <//>
 
+      <${NoTradeCard} plan=${plan} />
+
       ${track && html`<${Card} title="Balance vs milestones" class="span-2">
         ${series.length > 1
           ? html`<${ChartCanvas} type="line" height=${300} plugins=${[tierLabels]}
@@ -181,6 +184,98 @@ export function PlanView() {
     ${edit && html`<${TierModal} id=${edit.id} onClose=${() => setEdit(null)} />`}
     ${settings && html`<${PlanSettings} onClose=${() => setSettings(false)} />`}
   </div>`;
+}
+
+// ---------- Jours No-trade : liste des prochains jours, ajout / modification / masquage ----------
+function NoTradeCard({ plan }) {
+  const [edit, setEdit] = useState(null); // { ev } ou { ev: null } pour un nouveau jour
+  const [showHidden, setShowHidden] = useState(false);
+  const today = todayStr();
+  const all = eventsInRange(plan, today, addDays(today, 180), { includeHidden: true });
+  const hiddenN = all.filter((e) => e.hidden).length;
+  const list = all.filter((e) => showHidden || !e.hidden);
+
+  const setHidden = (e, hidden) =>
+    mutate((x) => {
+      const o = { ...(x.plan.ev_over[e.key] || {}), hidden };
+      if (!o.hidden && !o.title && !o.note) delete x.plan.ev_over[e.key];
+      else x.plan.ev_over[e.key] = o;
+    });
+  const remove = async (e) => {
+    if (await confirmDialog({ title: "Delete day", message: `Remove "${e.title}" on ${e.date}?`, confirmText: "Delete", danger: true })) mutate((x) => (x.plan.ev_custom = x.plan.ev_custom.filter((c) => c.id !== e.id)));
+  };
+  const when = (s) => {
+    const n = daysFromToday(s);
+    return n === 0 ? "Today" : n === 1 ? "Tomorrow" : `in ${n} days`;
+  };
+
+  return html`<${Card} title="No-trade days" class="span-2" actions=${html`<button class="btn small" onClick=${() => setEdit({ ev: null })}><${Icon} name="plus" size=${14} />Add day</button>`}>
+    <div class="muted small-t" style="margin-bottom:10px">FOMC, NFP, Jackson Hole, OPEX, triple witching, quarter end, year-end holidays and market closures (official dates built in). Shown on the Dashboard calendar. Add your own days, edit a title, or hide what you don't want.</div>
+    ${list.length
+      ? html`<div class="nt-list">${list.map((e) => html`<div class="nt-row ${e.hidden ? "hid" : ""}">
+          <div class="nt-date"><div class="strong">${parseDate(e.date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</div><div class="muted small-t">${when(e.date)}</div></div>
+          <div class="nt-main">
+            <div class="strong">${e.title}${e.edited ? html` <span class="muted small-t">(edited)</span>` : ""}</div>
+            ${e.note && html`<div class="muted small-t">${e.note}</div>`}
+          </div>
+          <span class="pill ${KINDS[e.kind].level === "no" ? "sell" : ""}">${KINDS[e.kind].label}</span>
+          <div class="actions">
+            <button class="icon-btn" aria-label="Edit" onClick=${() => setEdit({ ev: e })}><${Icon} name="edit" size=${16} /></button>
+            ${e.auto
+              ? html`<button class="icon-btn" aria-label=${e.hidden ? "Show again" : "Hide"} title=${e.hidden ? "Show again" : "Hide"} onClick=${() => setHidden(e, !e.hidden)}><${Icon} name=${e.hidden ? "eye" : "x"} size=${16} /></button>`
+              : html`<button class="icon-btn" aria-label="Delete" onClick=${() => remove(e)}><${Icon} name="trash" size=${16} /></button>`}
+          </div>
+        </div>`)}</div>`
+      : html`<div class="muted">Nothing in the next 6 months.</div>`}
+    ${hiddenN > 0 && html`<div style="margin-top:10px"><button class="btn small" onClick=${() => setShowHidden(!showHidden)}>${showHidden ? "Hide hidden days" : `Show hidden days (${hiddenN})`}</button></div>`}
+    ${edit && html`<${EventModal} ev=${edit.ev} onClose=${() => setEdit(null)} />`}
+  <//>`;
+}
+
+function EventModal({ ev, onClose }) {
+  const isNew = !ev;
+  const auto = ev && ev.auto;
+  const def = auto ? autoEvents(Number(ev.date.slice(0, 4))).find((a) => a.key === ev.key) : null;
+  const [f, setF] = useState({ date: ev ? ev.date : todayStr(), title: ev ? ev.title : "No-trade — ", note: ev ? ev.note : "" });
+  const set = (p) => setF((x) => ({ ...x, ...p }));
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(f.date) && f.title.trim().length > 0;
+  const save = () => {
+    mutate((x) => {
+      if (isNew) x.plan.ev_custom.push({ id: uid(), date: f.date, title: f.title.trim(), note: f.note.trim() });
+      else if (!auto) Object.assign(x.plan.ev_custom.find((c) => c.id === ev.id), { date: f.date, title: f.title.trim(), note: f.note.trim() });
+      else {
+        const o = { ...(x.plan.ev_over[ev.key] || {}) };
+        const title = f.title.trim(), note = f.note.trim();
+        if (title !== def.title) o.title = title; else delete o.title;
+        if (note !== def.note) o.note = note; else delete o.note;
+        if (!o.hidden && !o.title && !o.note) delete x.plan.ev_over[ev.key];
+        else x.plan.ev_over[ev.key] = o;
+      }
+    });
+    toast(isNew ? "Day added" : "Day updated");
+    onClose();
+  };
+  const reset = () => {
+    mutate((x) => {
+      const o = { ...(x.plan.ev_over[ev.key] || {}) };
+      delete o.title; delete o.note;
+      if (!o.hidden) delete x.plan.ev_over[ev.key];
+      else x.plan.ev_over[ev.key] = o;
+    });
+    toast("Reset to default");
+    onClose();
+  };
+  return html`<${Modal} title=${isNew ? "Add no-trade day" : "Edit day"} onClose=${onClose} small=${true}>
+    <div class="stack">
+      <${Field} label="Date" hint=${auto ? "Official date — add a new day instead to change the date." : ""}><input class="input" type="date" value=${f.date} disabled=${auto} onInput=${(e) => set({ date: e.target.value })} /><//>
+      <${Field} label="Title"><input class="input" placeholder="e.g. No-trade — CPI" value=${f.title} onInput=${(e) => set({ title: e.target.value })} /><//>
+      <${Field} label="Note"><input class="input" placeholder="Optional" value=${f.note} onInput=${(e) => set({ note: e.target.value })} /><//>
+    </div>
+    <div class="row between gap" style="margin-top:18px">
+      <div>${auto && ev.edited && html`<button class="btn" onClick=${reset}>Reset to default</button>`}</div>
+      <div class="row gap"><button class="btn" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${!valid} onClick=${save}>${isNew ? "Add" : "Save"}</button></div>
+    </div>
+  <//>`;
 }
 
 function TierModal({ id, onClose }) {

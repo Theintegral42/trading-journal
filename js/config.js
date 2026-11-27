@@ -12,7 +12,7 @@ export const CONFIG = {
   fileName: "trading_journal_data.json",
   backupsFolder: "backups",
   keepBackups: 14,
-  appVersion: "2.8.3",
+  appVersion: "2.9.0",
 };
 
 export function getClientId() {

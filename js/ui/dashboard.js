@@ -1,7 +1,8 @@
 import { html, useState, useEffect } from "../lib/preact-htm.js";
 import { useStore, mutate, mainRows } from "../store.js";
 import { computeStats, groupStats, periodFilter, dayOf, normDirection } from "../data.js";
-import { money, fmtR, num, pad, parseDate, round2, compactMoney, displayFactor, displaySymbol, baseCurrency } from "../util.js";
+import { money, fmtR, num, pad, parseDate, round2, compactMoney, displayFactor, displaySymbol, baseCurrency, todayStr, addDays } from "../util.js";
+import { KINDS, eventsByDay, eventsInRange, isNoTrade, monthRange } from "../events.js";
 import { Icon, Card, Select, Empty, ChartCanvas } from "./components.js";
 import { LogPicker, currentLog } from "./tradelog.js";
 
@@ -54,8 +55,16 @@ export function DashboardView() {
   }
 
   // --- calendrier ---
-  const months = [...new Set(rows.map((r) => dayOf(r).slice(0, 7)))].sort();
-  const calMonth = month && months.includes(month) ? month : months[months.length - 1];
+  const tradeMonths = [...new Set(rows.map((r) => dayOf(r).slice(0, 7)))].sort();
+  const nowM = todayStr().slice(0, 7);
+  const nextM = (k, n) => { const [yy, mm] = k.split("-").map(Number); const t = new Date(yy, mm - 1 + n, 1); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}`; };
+  // + mois en cours et les 2 suivants : on y voit les jours No-trade à venir
+  const months = [...new Set([...tradeMonths, nowM, nextM(nowM, 1), nextM(nowM, 2)])].sort();
+  const calMonth = month && months.includes(month) ? month : tradeMonths[tradeMonths.length - 1];
+  const today = todayStr();
+  const soon = eventsInRange(d.plan, today, addDays(today, 1));
+  const todayEv = soon.filter((e) => e.date === today);
+  const tomorrowEv = soon.filter((e) => e.date !== today);
   const mi = months.indexOf(calMonth);
 
   // --- séries mensuelles ---
@@ -70,6 +79,9 @@ export function DashboardView() {
   return html`<div class="page">
     ${header}
     <${LogPicker} />
+
+    ${todayEv.length > 0 && html`<div class="banner ${isNoTrade(todayEv) ? "err" : "info"}"><${Icon} name="alert" size=${16} /><span><strong>${isNoTrade(todayEv) ? "No-trade day today" : "Today"}</strong> — ${todayEv.map((e) => e.title.replace(/^No-trade — /, "")).join(" · ")}</span></div>`}
+    ${!todayEv.length && tomorrowEv.length > 0 && html`<div class="banner info"><${Icon} name="alert" size=${16} /><span><strong>Tomorrow</strong> — ${tomorrowEv.map((e) => e.title.replace(/^No-trade — /, "")).join(" · ")}</span></div>`}
 
     ${log !== "Main" &&
     html`<div class="card target">
@@ -135,7 +147,7 @@ export function DashboardView() {
       <//>
 
       <${Card} title="Calendar" actions=${html`<button class="icon-btn" disabled=${mi <= 0} onClick=${() => setMonth(months[mi - 1])} aria-label="Previous month"><${Icon} name="left" /></button><button class="icon-btn" disabled=${mi >= months.length - 1} onClick=${() => setMonth(months[mi + 1])} aria-label="Next month"><${Icon} name="right" /></button>`}>
-        <${CalendarGrid} month=${calMonth} rows=${rows} />
+        <${CalendarGrid} month=${calMonth} rows=${rows} plan=${d.plan} />
       <//>
 
       <${Card} title="Drawdown">
@@ -174,7 +186,7 @@ function GroupTable({ data }) {
     )}</tbody></table></div>`;
 }
 
-function CalendarGrid({ month, rows }) {
+function CalendarGrid({ month, rows, plan }) {
   const [pop, setPop] = useState(null); // { day, left, top } : bulle de détail d'une journée
   useEffect(() => {
     if (!pop) return;
@@ -207,6 +219,7 @@ function CalendarGrid({ month, rows }) {
     }
   });
   const max = Math.max(1, ...Object.values(byDay).map((v) => Math.abs(v.pnl)));
+  const evDay = eventsByDay(plan, ...monthRange(month)); // jours No-trade / marché fermé
   const cells = [];
   for (let i = 0; i < offset; i++) cells.push(null);
   for (let dnum = 1; dnum <= daysIn; dnum++) cells.push(dnum);
@@ -224,30 +237,45 @@ function CalendarGrid({ month, rows }) {
         return [
           ...w.map((dn) => {
             if (!dn) return html`<div class="cal-c empty"></div>`;
-            const v = byDay[`${month}-${pad(dn)}`];
+            const key = `${month}-${pad(dn)}`;
+            const v = byDay[key];
+            const ev = evDay[key];
+            const info = v || ev;
+            const cnt = (v ? v.trades.length : 0) + (ev ? ev.length : 0);
             const a = v ? 0.18 + 0.55 * (Math.abs(v.pnl) / max) : 0;
             const bg = v ? (v.pnl >= 0 ? `rgba(34,197,94,${a})` : `rgba(239,68,68,${a})`) : "";
-            return html`<div class="cal-c ${v ? (v.pnl >= 0 ? "w" : "l") : ""}" style=${{ background: bg }} tabindex=${v ? 0 : undefined} onMouseEnter=${v ? (e) => openPop(e, `${month}-${pad(dn)}`, v.trades.length) : undefined} onMouseLeave=${v ? () => setPop(null) : undefined} onFocus=${v ? (e) => openPop(e, `${month}-${pad(dn)}`, v.trades.length) : undefined} onBlur=${v ? () => setPop(null) : undefined} onClick=${v ? (e) => (pop?.key === `${month}-${pad(dn)}` ? setPop(null) : openPop(e, `${month}-${pad(dn)}`, v.trades.length)) : undefined}>
-              <span class="cal-d">${dn}</span>${v && html`<span class="cal-p">${compactMoney(v.pnl)}</span>`}</div>`;
+            const evCls = ev ? (isNoTrade(ev) ? "nt" : "cl") : "";
+            const first = ev && (ev.find((e) => KINDS[e.kind].level === "no") || ev[0]);
+            const tag = first && html`<span class="cal-ev ${evCls}">${KINDS[first.kind].code}${ev.length > 1 ? " +" + (ev.length - 1) : ""}</span>`;
+            return html`<div class="cal-c ${v ? (v.pnl >= 0 ? "w" : "l") : ""} ${evCls}" style=${{ background: bg }} tabindex=${info ? 0 : undefined} onMouseEnter=${info ? (e) => openPop(e, key, cnt) : undefined} onMouseLeave=${info ? () => setPop(null) : undefined} onFocus=${info ? (e) => openPop(e, key, cnt) : undefined} onBlur=${info ? () => setPop(null) : undefined} onClick=${info ? (e) => (pop?.key === key ? setPop(null) : openPop(e, key, cnt)) : undefined}>
+              <div class="cal-top"><span class="cal-d">${dn}</span>${first && v && tag}</div>${v ? html`<span class="cal-p">${compactMoney(v.pnl)}</span>` : first && tag}</div>`;
           }),
           html`<div class="cal-c week ${any ? (wt >= 0 ? "pos" : "neg") : ""}">${any ? compactMoney(wt) : ""}</div>`,
         ];
       })}
     </div>
-    ${pop && byDay[pop.key] && html`<${DayPop} day=${pop.key} info=${byDay[pop.key]} left=${pop.left} top=${pop.top} />`}
+    ${pop && (byDay[pop.key] || evDay[pop.key]) && html`<${DayPop} day=${pop.key} info=${byDay[pop.key]} events=${evDay[pop.key] || []} left=${pop.left} top=${pop.top} />`}
   </div>`;
 }
 
 // Bulle de détail d'une journée : P&L, R et chaque trade (symbole, setup, direction, résultat).
-function DayPop({ day, info, left, top }) {
+function DayPop({ day, info, events = [], left, top }) {
   const label = parseDate(day).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-  const wins = info.trades.filter((t) => num(t.PnL) > 0).length;
+  const wins = info ? info.trades.filter((t) => num(t.PnL) > 0).length : 0;
+  const nt = isNoTrade(events);
   return html`<div class="cal-pop" style=${{ left: left + "px", top: top + "px" }}>
     <div class="cal-pop-head">
-      <div><strong>${label}</strong><div class="muted small-t">${info.n} trade${info.n > 1 ? "s" : ""} · ${wins}W / ${info.n - wins}L</div></div>
-      <div class="right"><div class="strong ${info.pnl >= 0 ? "pos" : "neg"}">${money(info.pnl, 0, true)}</div><div class="muted small-t">${fmtR(info.r, true)}</div></div>
+      ${info
+        ? html`<div><strong>${label}</strong><div class="muted small-t">${info.n} trade${info.n > 1 ? "s" : ""} · ${wins}W / ${info.n - wins}L</div></div>
+      <div class="right"><div class="strong ${info.pnl >= 0 ? "pos" : "neg"}">${money(info.pnl, 0, true)}</div><div class="muted small-t">${fmtR(info.r, true)}</div></div>`
+        : html`<div><strong>${label}</strong><div class="muted small-t">${nt ? "No-trade day" : "Market info"}</div></div>`}
     </div>
-    ${info.trades.map((t) => {
+    ${events.map((e) => html`<div class="cal-pop-row">
+        <div class="cal-pop-main"><div class="strong">${e.title}</div>${e.note && html`<div class="muted small-t cal-pop-note">${e.note}</div>`}</div>
+        <div class="right"><span class="pill ${KINDS[e.kind].level === "no" ? "sell" : ""}">${KINDS[e.kind].label}</span></div>
+      </div>`)}
+    ${info && nt && html`<div class="cal-pop-row"><div class="cal-pop-main"><span class="pill warn">You traded on a no-trade day</span></div></div>`}
+    ${(info ? info.trades : []).map((t) => {
       const dir = normDirection(t.Direction);
       return html`<div class="cal-pop-row">
         <div class="cal-pop-main">
